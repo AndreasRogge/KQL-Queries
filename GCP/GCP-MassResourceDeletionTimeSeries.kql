@@ -1,0 +1,32 @@
+let starttime = 14d;
+let endtime = 1d;
+let timeframe = 1d;
+let TotalEventsThreshold = 25;
+let TimeSeriesData = GCPAuditLogs 
+| where TimeGenerated between (startofday(ago(starttime))..startofday(now())) 
+| where MethodName endswith "delete" 
+| extend IPCustomEntity = tostring(parse_json(todynamic(RequestMetadata))['callerIp'])
+| where IPCustomEntity != "private"
+| where not(ipv4_is_private(IPCustomEntity))
+| extend SrcUsername = tostring(parse_json(todynamic(AuthenticationInfo))['principalEmail'])
+| extend SrcUserAgent = parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent']
+| project TimeGenerated, SrcUsername
+| make-series Total = count() on TimeGenerated from startofday(ago(starttime)) to startofday(now()) step timeframe by SrcUsername;
+TimeSeriesData 
+| extend (anomalies, score, baseline) = series_decompose_anomalies(Total, 3, -1, 'linefit') 
+| mv-expand Total to typeof(double), TimeGenerated to typeof(datetime), anomalies to typeof(double), score to typeof(double), baseline to typeof(long) 
+| where TimeGenerated >= startofday(ago(endtime)) 
+| where anomalies > 0 
+| project SrcUsername, TimeGenerated, Total, baseline, anomalies, score 
+| where Total > TotalEventsThreshold and baseline > 0 
+| join (GCPAuditLogs 
+| where TimeGenerated > startofday(ago(endtime)) 
+| where MethodName endswith "delete" 
+| extend IPCustomEntity = tostring(parse_json(todynamic(RequestMetadata))['callerIp'])
+| where IsPrivate = IPCustomEntity != "private"
+| where not(ipv4_is_private(IPCustomEntity))
+| extend SrcUsername = tostring(parse_json(todynamic(AuthenticationInfo))['principalEmail'])
+| extend SrcUserAgent = parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent']
+| summarize count(), make_set(MethodName,100), make_set(GCPResourceName,100), make_set(IPCustomEntity,100) by bin(TimeGenerated, timeframe), SrcUsername
+) on TimeGenerated, SrcUsername
+| project-away SrcUsername1, count_

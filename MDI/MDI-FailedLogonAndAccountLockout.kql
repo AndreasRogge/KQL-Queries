@@ -1,0 +1,31 @@
+let startDate = startofday(ago(14d));
+let endDate = startofday(ago(1d));
+let hourlyAverages = 
+IdentityLogonEvents
+| where FailureReason == "WrongPassword" or FailureReason == "AccountLocked"
+| where TimeGenerated between (startDate .. endDate)
+| summarize Failures=count(), NumAccounts=count_distinct(AccountName) by bin(TimeGenerated, 1h), DeviceName
+| summarize AvgNumAccounts = avg(NumAccounts), AvgFailures = avg(Failures) by DeviceName
+| extend AvgNumAccounts10Perc = AvgNumAccounts * 1.1
+| extend AvgFailures10Perc = AvgFailures * 1.1;
+let lastHour = IdentityLogonEvents
+| where FailureReason == "WrongPassword" or FailureReason == "AccountLocked"
+| where TimeGenerated >= ago(1h)
+| where AccountName notcontains "$"
+| summarize Failures=count(), NumAccounts=count_distinct(AccountName), Accounts=make_set(AccountName) by DeviceName
+| where Failures >= 10 and NumAccounts > 1;
+hourlyAverages
+| join kind=innerunique (lastHour) on DeviceName
+| where NumAccounts > AvgNumAccounts10Perc and Failures > AvgFailures10Perc
+
+
+let CountEvents = IdentityLogonEvents
+| where FailureReason == "AccountLocked"
+| where TimeGenerated >= ago(1d)
+| summarize LockedOnDevice = count_distinct(AccountName) by DeviceName 
+| summarize sum(LockedOnDevice);
+IdentityLogonEvents
+| where FailureReason == "AccountLocked"
+| where TimeGenerated >= ago(1d)
+| summarize LockedOnDevice = count_distinct(AccountName), make_set(AccountName) by DeviceName
+| where  toscalar(CountEvents) > 50

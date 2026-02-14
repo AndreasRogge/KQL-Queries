@@ -1,0 +1,17 @@
+// Watchlist schema:
+//Header: Country
+//Item: Russia
+let blockedCountries = (_GetWatchlist('CountryBlocklist'))
+| project Country;
+GCPAuditLogs
+| where TimeGenerated >= ago(30d)
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| extend SrcIpAddr = tostring(SrcIpAddr)
+| where ipv4_is_private(SrcIpAddr) == false and SrcIpAddr !startswith "240.0" and SrcIpAddr !startswith "240.1" and SrcIpAddr !startswith "100.64" and SrcIpAddr != "127.0.0.1"
+| extend ipinfo = geo_info_from_ip_address(SrcIpAddr)
+| extend Country = tostring(parse_json(ipinfo.country))
+| where Country in (blockedCountries)
+| where PrincipalEmail != "system:anonymous"
+| extend StatusInfo = parse_json(todynamic(Status))['message']
+| where StatusInfo !startswith "forbidden"
+| summarize count() by Country, PrincipalEmail

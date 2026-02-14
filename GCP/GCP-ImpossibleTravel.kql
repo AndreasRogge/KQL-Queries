@@ -1,0 +1,33 @@
+let latestStatus = GCPAuditLogs
+| where TimeGenerated >= ago(1h)
+| where isnotnull(PrincipalEmail) and PrincipalEmail !endswith "gserviceaccount.com"
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| extend SrcIpAddr = tostring(SrcIpAddr)
+| extend UserAgent = tostring(parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent'])
+| where UserAgent notcontains "google-api-go-client"
+| where ipv4_is_private(SrcIpAddr) == false and SrcIpAddr !startswith "240.0" and SrcIpAddr !startswith "240.1" and SrcIpAddr !startswith "100.64" and SrcIpAddr != "127.0.0.1"
+| extend ipinfo = geo_info_from_ip_address(SrcIpAddr)
+| extend Country = tostring(parse_json(ipinfo.country))
+| where PrincipalEmail != "system:anonymous"
+| project PrincipalEmail, TimeGenerated, LatestIpinfo = ipinfo, UserAgent, SrcIpAddr
+| summarize TimeGenerated = arg_max(TimeGenerated,*) by PrincipalEmail;
+let nextToLatestStatus = GCPAuditLogs
+| where TimeGenerated >= ago(1h)
+| where isnotnull(PrincipalEmail)
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| extend SrcIpAddr = tostring(SrcIpAddr)
+| extend UserAgent = tostring(parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent'])
+| where UserAgent notcontains "google-api-go-client"
+| where ipv4_is_private(SrcIpAddr) == false and SrcIpAddr !startswith "240.0" and SrcIpAddr !startswith "240.1" and SrcIpAddr !startswith "100.64" and SrcIpAddr != "127.0.0.1"
+| extend ipinfo = geo_info_from_ip_address(SrcIpAddr)
+| extend Country = tostring(parse_json(ipinfo.country))
+| join kind = leftanti (latestStatus) on PrincipalEmail, TimeGenerated
+| project PrincipalEmail, TimeGenerated, nextToLatestIpinfo = ipinfo, UserAgent, SrcIpAddr
+| summarize TimeGenerated = arg_max(TimeGenerated,*) by PrincipalEmail;
+latestStatus
+| join kind=inner (nextToLatestStatus) on PrincipalEmail
+| extend LatitudeNextToLatest = todouble(parse_json(nextToLatestIpinfo.latitude))
+| extend LongitudeNextToLatest = todouble(parse_json(nextToLatestIpinfo.longitude))
+| extend LatitudeLatest = todouble(parse_json(LatestIpinfo.latitude))
+| extend LongitudeLatest = todouble(parse_json(LatestIpinfo.longitude))
+| where geo_distance_2points(LongitudeLatest, LatitudeLatest, LongitudeNextToLatest, LatitudeNextToLatest) > 100000

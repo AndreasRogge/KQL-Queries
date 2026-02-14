@@ -1,0 +1,65 @@
+Usage
+| where StartTime >= startofday(ago(31d)) and EndTime < startofday(now())
+| where IsBillable == true
+| summarize BillableDataGB = sum(Quantity) / 1000. by bin(StartTime, 1d), DataType
+| render columnchart
+    union *
+| project Type, billable = _IsBillable, datasize = _BilledSize
+| summarize totalentries = count(), sum(datasize) by Type, billable
+| sort by sum_datasize
+    CommonSecurityLog
+| where TimeGenerated >= ago(90d)
+| project Type, billable = _IsBillable, datasize = _BilledSize, TimeGenerated
+| summarize Count = count(), Average = avg(datasize)
+
+let RetentionCostPerGbPerMonth = 0.126;
+let IngestionCostPerGb = 5.17;
+    Usage
+| where TimeGenerated > ago(90d)
+| where DataType == "CommonSecurityLog"
+
+// | distinct QuantityUnit
+| summarize smb = sumif(Quantity, QuantityUnit == "MBytes"), skb = sumif(Quantity, QuantityUnit == "KBytes"), count() by bin(TimeGenerated, 1d)
+| extend ["Total Ingestion (MB)"] = (smb + skb/1000)
+| extend ["Total Ingestion (GB)"] = ["Total Ingestion (MB)"]/1000
+| extend ["Ingestion Cost per Day"] = ["Total Ingestion (MB)"]/1000 * IngestionCostPerGb
+| project-away smb, skb
+
+// | summarize avg(["Total Ingestion (GB)"])
+// | distinct DataType, Solution
+let AnalyticIngestionCostPerGb = 5.36;
+
+let BasicIngestionCostPerGb = 1.10;
+
+let AuxIngestionCostPerGb = 0.19;
+CommonSecurityLog
+| where TimeGenerated >= ago(30d)
+| extend policyName = tostring(extract("profile = (\\w+)[-]?(\\w+)", 0, AdditionalExtensions))
+| extend policyID = extract("policyid = (\\d+)", 1, AdditionalExtensions)
+| extend policyUUID = extract("poluuid = (\\d+)", 1, AdditionalExtensions)
+
+// | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+// | where Activity contains "dns"
+// | where policyID == 111
+// | where SimplifiedDeviceAction contains "block"
+| project Type, billable = _IsBillable, datasize = _BilledSize, TimeGenerated
+| summarize DataPerHourInGB = sum(datasize)/1000/1000/1000 by bin(TimeGenerated, 1h)
+| summarize AvgDataPerHourInGB = avg(DataPerHourInGB)
+
+// | extend CostPerDay = AvgDataPerHourInGB*24*AnalyticIngestionCostPerGb
+| extend AnalyticCostPerMonth = round(AvgDataPerHourInGB*24*AnalyticIngestionCostPerGb*30, 2)
+| extend BasicCostPerMonth = round(AvgDataPerHourInGB*24*BasicIngestionCostPerGb*30, 2)
+| extend AuxCostPerMonth = round(AvgDataPerHourInGB*24*AuxIngestionCostPerGb*30, 2)
+| project-reorder AnalyticCostPerMonth, BasicCostPerMonth, AuxCostPerMonth, AvgDataPerHourInGB
+
+// where policyID == 111
+// | summarize count() by Activity, DeviceAction
+// | where DeviceAction contains "block"
+| project Type, billable = _IsBillable, datasize = _BilledSize, TimeGenerated
+| summarize sum(datasize)/1000/1000/1000 by bin(TimeGenerated, 1h)
+    Usage
+| where StartTime >= startofday(ago(31d)) and EndTime < startofday(now())
+| where DataType == "CommonSecurityLog"
+| where IsBillable == true
+| summarize BillableDataGB = sum(Quantity) / 1000. by bin(StartTime, 1d), DataType
+| render columnchart

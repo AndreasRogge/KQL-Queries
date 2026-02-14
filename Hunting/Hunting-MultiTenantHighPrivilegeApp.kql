@@ -1,0 +1,30 @@
+let SensitiveScopes = dynamic([
+"Directory.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Application.ReadWrite.All",
+"RoleManagement.ReadWrite.Directory", "Policy.ReadWrite.ConditionalAccess",
+"User.ReadWrite.All", "Group.ReadWrite.All", "AuditLog.Read.All",
+"Files.ReadWrite.All", "Mail.ReadWrite", "Sites.FullControl.All"
+]);
+OAuthAppInfo
+| where Timestamp >= ago(30d)
+| mv-expand Permissions
+| extend AppPermission = tostring(parse_json(Permissions)["PermissionValue"])
+| where AppPermission in (SensitiveScopes)
+| join (
+    CloudAppEvents
+| where ActionType == @"Add service principal."
+| extend AppDisplayName = ObjectName
+| extend HomeTenantId = tostring(parse_json(RawEventData).OrganizationId)
+| extend InitiatingUser = tostring(parse_json(RawEventData).UserId)
+| extend raw = todynamic(RawEventData)
+| extend ExtProps = todynamic(raw.ExtendedProperties)
+| mv-expand ExtProps to typeof(dynamic)
+| extend _name = tostring(ExtProps.Name), _val = tostring(ExtProps.Value)
+| extend
+    AppOwnerOrganizationId = iff(_name =~ "additionalDetails", tostring(parse_json(_val).AppOwnerOrganizationId), "")
+    ,
+    AppId = iff(_name =~ "additionalDetails", tostring(parse_json(_val).AppId), "")
+| where isnotempty(AppOwnerOrganizationId)
+| where AppOwnerOrganizationId != HomeTenantId
+| project Timestamp, AppId, AppDisplayName, AppOwnerOrganizationId, InitiatingUser
+    )
+    on $left.OAuthAppId == $right.AppId

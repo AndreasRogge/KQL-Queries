@@ -1,0 +1,10 @@
+GCPAuditLogs
+| where MethodName =~ 'google.iam.v1.IAMPolicy.SetIamPolicy'
+| where GCPResourceType contains 'bucket'
+| extend members = parse_json(todynamic(Metadata))['tableChange']['table']['policy']['bindings'][0]['members']
+| extend action = parse_json(todynamic(Metadata))['tableChange']['bindingDeltas'][0]['action']
+| where members in~ ('allUsers', 'allAuthenticatedUsers')
+| where action =~ 'ADD'
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| where SrcIpAddr != "private"
+| extend timestamp = TimeGenerated, SrcUsername = PrincipalEmail, SrcIpAddr

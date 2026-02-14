@@ -1,0 +1,8 @@
+GCPAuditLogs
+| where MethodName =~ "SetIamPolicy"
+| extend UserAgent = parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent']
+| extend IPCustomEntity = parse_json(todynamic(RequestMetadata))['callerIp']
+| where IPCustomEntity != "private" //For calls made from inside Google's internal production network from one Google Cloud service to another, the caller_ip is redacted to "private".
+| where isempty(UserAgent)
+| extend timestamp = TimeGenerated, AccountCustomEntity = PrincipalEmail
+//| summarize count() by MethodName

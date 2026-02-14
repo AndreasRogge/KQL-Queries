@@ -1,0 +1,10 @@
+GCPAuditLogs
+| where MethodName == 'SetIamPolicy'
+| extend auditLogConfigs = parse_json(todynamic(ServiceData))['policyDelta']['bindingDeltas'][0]['auditLogConfigs']
+| where isempty(auditLogConfigs)
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| extend SrcIpAddr = tostring(SrcIpAddr)
+| extend
+    timestamp = TimeGenerated,
+    AccountCustomEntity = PrincipalEmail,
+    IPCustomEntity = SrcIpAddr

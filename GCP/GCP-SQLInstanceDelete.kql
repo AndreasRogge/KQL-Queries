@@ -1,0 +1,12 @@
+GCPAuditLogs
+| where MethodName =~ 'cloudsql.instances.delete'
+| extend Type = split(parse_json(todynamic(AuthenticationInfo))['principalSubject'],":")[0]
+| where Type != "serviceAccount"
+| extend granted = parse_json(todynamic(AuthorizationInfo))[0]['granted']
+| where granted == "true"
+| extend AccountCustomEntity = PrincipalEmail
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| extend TargetInstanceName = parse_json(todynamic(Request))['instance']
+| extend operationType = parse_json(todynamic(Response))['operationType']
+| where operationType =~ "DELETE"
+//| summarize count() by tostring(operationType)

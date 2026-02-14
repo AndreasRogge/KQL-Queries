@@ -1,0 +1,26 @@
+SigninLogs
+| where UserId == "[OBJECT_ID]"
+| extend CAP = parse_json(ConditionalAccessPolicies)
+| extend Status = parse_json(Status)
+| mv-apply CAP on (
+    project Result = tostring(CAP.result),
+    CAPName = tostring(CAP.displayName),
+    SessionControls = tostring(CAP.enforcedSessionControls)
+    )
+| where Result !in ("success","notEnabled","notApplied","reportOnlySuccess","reportOnlyNotApplied","unknownFutureValue","reportOnlyFailure")
+| mv-apply Status on (
+    project StatusErrorCode = tostring(Status.errorCode),
+    StatusAdditionalDetails = tostring(Status.additionalDetails)
+    )
+| project UserPrincipalName, Result, CAPName, SessionControls, StatusErrorCode, StatusAdditionalDetails
+    SigninLogs
+| where UserId == "[OBJECT_ID]"
+| extend errorCode = Status.errorCode,
+    additionalDetails = Status.additionalDetails,
+    failureReason = Status.failureReason
+| mv-expand ConditionalAccessPolicies
+| extend CAPDisplayName = tostring(ConditionalAccessPolicies.displayName),
+    CAPResult = tostring(ConditionalAccessPolicies.result),
+    CAPSessionControls = tostring(ConditionalAccessPolicies.enforcedSessionControls)
+| where CAPResult !in ("success","notEnabled","notApplied","reportOnlySuccess","reportOnlyNotApplied","unknownFutureValue","reportOnlyFailure")
+| project TimeGenerated, UserPrincipalName, CAPDisplayName, CAPResult, CAPSessionControls, errorCode, additionalDetails, failureReason

@@ -1,0 +1,12 @@
+let privileged_roles = dynamic(['roles/iam.securityAdmin', 'roles/secretmanager.admin', 'roles/secretmanager.secretAccessor', 'roles/apigateway.admin', 'roles/logging.admin', 'roles/iam.organizationRoleAdmin', 'roles/iam.roleAdmin', 'roles/iam.serviceAccountAdmin', 'roles/iam.serviceAccountCreator', 'roles/iam.serviceAccountKeyAdmin']);
+GCPAuditLogs
+| where MethodName == "SetIamPolicy"
+| extend action = parse_json(todynamic(ServiceData))['policyDelta']['bindingDeltas'][0]['action']
+| where action =~ "ADD"
+| extend role = parse_json(todynamic(ServiceData))['policyDelta']['bindingDeltas'][0]['role']
+| where role in~ (privileged_roles)
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| where SrcIpAddr != "gce-internal-ip"
+| extend TargetUser = split(parse_json(todynamic(ServiceData))['policyDelta']['bindingDeltas'][0]['member'], ":")[1]
+| extend TargetType = split(parse_json(todynamic(ServiceData))['policyDelta']['bindingDeltas'][0]['member'], ":")[0]
+| extend timestamp = TimeGenerated, Username = PrincipalEmail, SrcIpAddr

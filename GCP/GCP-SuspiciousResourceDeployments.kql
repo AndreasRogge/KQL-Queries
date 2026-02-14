@@ -1,0 +1,31 @@
+let szOperationNames = dynamic(["v1.compute.instanceGroupManagers.createInstances", "storage.buckets.create", "cloudsql.instances.create"]);
+let starttime = 7d;
+let endtime = 1d;
+let timeframe = 1d;
+let TimeSeriesData =
+GCPAuditLogs
+| where TimeGenerated between (startofday(ago(starttime)) .. startofday(now()))
+| where MethodName in~ (szOperationNames)
+| extend IPCustomEntity = tostring(parse_json(todynamic(RequestMetadata))['callerIp'])
+| where IPCustomEntity != "private"
+| extend SrcUsername = tostring(parse_json(todynamic(AuthenticationInfo))['principalEmail'])
+| extend SrcUserAgent = parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent']
+| project TimeGenerated, SrcUsername 
+| make-series Total = count() on TimeGenerated from startofday(ago(starttime)) to startofday(now()) step timeframe by tostring(SrcUsername);
+TimeSeriesData
+| extend (anomalies, score, baseline) = series_decompose_anomalies(Total, 3, -1, 'linefit')
+| mv-expand Total to typeof(double), TimeGenerated to typeof(datetime), anomalies to typeof(double), score to typeof(double), baseline to typeof(long) 
+| where TimeGenerated >= startofday(ago(endtime))
+| where anomalies > 0 and baseline > 0
+| project SrcUsername, TimeGenerated, Total, baseline, anomalies, score
+| join (GCPAuditLogs
+| where TimeGenerated > startofday(ago(endtime)) 
+| where MethodName in~ (szOperationNames)
+| extend IPCustomEntity = tostring(parse_json(todynamic(RequestMetadata))['callerIp'])
+| where IPCustomEntity != "private"
+| extend SrcUsername = tostring(parse_json(todynamic(AuthenticationInfo))['principalEmail'])
+| extend SrcUserAgent = parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent']
+| summarize make_set(MethodName,100), make_set(GCPResourceName,100), make_set(IPCustomEntity,100) by bin(TimeGenerated, timeframe), SrcUsername
+) on TimeGenerated, SrcUsername
+| mv-expand IPCustomEntity=set_IPCustomEntity
+| project-away SrcUsername1

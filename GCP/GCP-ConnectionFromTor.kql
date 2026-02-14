@@ -1,0 +1,8 @@
+let ip = (externaldata (IPAddress: string)["https://check.torproject.org/torbulkexitlist"]);
+GCPAuditLogs
+| where isnotnull(PrincipalEmail) and PrincipalEmail !endswith "gserviceaccount.com"
+| extend SrcIpAddr = parse_json(todynamic(RequestMetadata))['callerIp']
+| extend SrcIpAddr = tostring(SrcIpAddr)
+| extend UserAgent = tostring(parse_json(todynamic(RequestMetadata))['callerSuppliedUserAgent'])
+| where UserAgent notcontains "google-api-go-client"
+| where SrcIpAddr in (ip)
