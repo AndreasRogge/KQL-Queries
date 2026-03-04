@@ -1,0 +1,33 @@
+// Analytic Rule: Detect outbound connections to rare external destinations
+// Severity: Medium | Tier: Analytic (real-time correlation required)
+// MITRE: TA0011 Command and Control, TA0010 Exfiltration
+// Description: Identifies internal hosts connecting to external IPs that have not been
+//              seen in the last 14 days. Filters out common/allowed traffic.
+let LookbackPeriod = 14d;
+let DetectionWindow = 1h;
+let MinConnectionsNewDest = 3;
+// Build a baseline of known destination IPs
+let KnownDestinations = CommonSecurityLog
+    | where TimeGenerated between (ago(LookbackPeriod) .. ago(DetectionWindow))
+    | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+    | where DeviceAction == "Accept"
+    | where ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP))
+    | distinct DestinationIP;
+// Find connections to never-before-seen destinations
+CommonSecurityLog
+| where TimeGenerated >= ago(DetectionWindow)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where DeviceAction == "Accept"
+| where ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP))
+| where DestinationIP !in (KnownDestinations)
+// Exclude common ports that are typically benign
+| where DestinationPort !in (80, 443, 53)
+| summarize
+    ConnectionCount = count(),
+    DistinctPorts = dcount(DestinationPort),
+    Ports = make_set(DestinationPort, 20),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by SourceIP, DestinationIP, DeviceName
+| where ConnectionCount >= MinConnectionsNewDest
+| order by ConnectionCount desc

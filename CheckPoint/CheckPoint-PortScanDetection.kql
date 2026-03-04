@@ -1,0 +1,40 @@
+// Analytic Rule: Detect port scanning activity through Check Point firewall
+// Severity: Medium | Tier: Analytic (real-time detection required)
+// MITRE: TA0043 Reconnaissance, T1046 Network Service Discovery
+// Description: Identifies hosts connecting to an unusually high number of distinct
+//              destination ports on a single target, indicating port scanning behavior.
+let DetectionWindow = 15m;
+let DistinctPortThreshold = 25;
+let DistinctHostPortThreshold = 50;
+// Vertical port scan: one source scanning many ports on one destination
+let VerticalScans = CommonSecurityLog
+    | where TimeGenerated >= ago(DetectionWindow)
+    | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+    | where isnotempty(DestinationPort)
+    | summarize
+        DistinctPorts = dcount(DestinationPort),
+        Ports = make_set(DestinationPort, 50),
+        EventCount = count(),
+        Actions = make_set(DeviceAction)
+        by SourceIP, DestinationIP, DeviceName
+    | where DistinctPorts >= DistinctPortThreshold
+    | extend ScanType = "Vertical";
+// Horizontal port scan: one source scanning one port across many destinations
+let HorizontalScans = CommonSecurityLog
+    | where TimeGenerated >= ago(DetectionWindow)
+    | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+    | where isnotempty(DestinationPort)
+    | summarize
+        DistinctHosts = dcount(DestinationIP),
+        Targets = make_set(DestinationIP, 50),
+        EventCount = count(),
+        Actions = make_set(DeviceAction)
+        by SourceIP, DestinationPort, DeviceName
+    | where DistinctHosts >= DistinctHostPortThreshold
+    | extend ScanType = "Horizontal",
+             DestinationIP = tostring(Targets[0]);
+union VerticalScans, HorizontalScans
+| project TimeGenerated = now(), ScanType, SourceIP, DestinationIP,
+          DestinationPort = coalesce(DestinationPort, 0),
+          DistinctPorts, EventCount, Actions, DeviceName
+| order by EventCount desc

@@ -1,0 +1,90 @@
+// Data Tier Split Analysis: Measure Check Point data volumes per traffic category
+// Description: Helps you understand how much data belongs in Analytic tier vs Sentinel Data Lake.
+//              Run this BEFORE configuring your DCR transformation to validate the split.
+//              This query categorizes all Check Point firewall data and shows volume per category.
+
+// Step 1: Categorize and measure all Check Point traffic
+let AnalyticIngestionCostPerGb = 5.36;
+let DataLakeIngestionCostPerGb = 0.19;
+CommonSecurityLog
+| where TimeGenerated >= ago(30d)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| extend
+    Direction = case(
+        ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP)), "Outbound",
+        not(ipv4_is_private(SourceIP)) and ipv4_is_private(DestinationIP), "Inbound",
+        ipv4_is_private(SourceIP) and ipv4_is_private(DestinationIP),      "Internal",
+        "External-to-External"
+    ),
+    ActionCategory = case(
+        DeviceAction in ("Drop", "Reject", "Block"),  "Blocked",
+        DeviceAction == "Accept",                      "Allowed",
+        "Other"
+    ),
+    SeverityCategory = case(
+        LogSeverity in (8, 9, 10) or LogSeverity in ("High", "Critical", "Emergency"), "HighSeverity",
+        "NormalSeverity"
+    ),
+    IsVPN = Activity has_any ("VPN", "Remote Access", "SSL Network Extender"),
+    IsMgmt = Activity has_any ("Policy Install", "Object Modified", "Rule Modified", "Admin", "Log In")
+| extend RecommendedTier = case(
+    // ANALYTIC TIER: Data needed for real-time detection rules
+    SeverityCategory == "HighSeverity",                                         "Analytic",
+    IsVPN,                                                                       "Analytic",
+    IsMgmt,                                                                      "Analytic",
+    ActionCategory == "Blocked" and Direction == "Inbound",                      "Analytic",
+    ActionCategory == "Blocked" and Direction == "Outbound",                     "Analytic",
+    ActionCategory == "Allowed" and Direction == "Outbound",                     "Analytic",
+    // SENTINEL DATA LAKE: High-volume operational data for retroactive investigation
+    ActionCategory == "Allowed" and Direction == "Internal",                     "DataLake",
+    ActionCategory == "Blocked" and Direction == "Internal",                     "DataLake",
+    ActionCategory == "Allowed" and Direction == "Inbound",                      "DataLake",
+    "DataLake"
+)
+| summarize
+    EventCount = count(),
+    DataSizeGB = round(sum(_BilledSize) / 1000 / 1000 / 1000, 3)
+    by Direction, ActionCategory, SeverityCategory, RecommendedTier
+| extend
+    AnalyticCostPerMonth = round(DataSizeGB * AnalyticIngestionCostPerGb, 2),
+    DataLakeCostPerMonth = round(DataSizeGB * DataLakeIngestionCostPerGb, 2)
+| order by RecommendedTier asc, DataSizeGB desc
+
+
+// Step 2: Summary view - total cost comparison
+CommonSecurityLog
+| where TimeGenerated >= ago(30d)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| extend
+    Direction = case(
+        ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP)), "Outbound",
+        not(ipv4_is_private(SourceIP)) and ipv4_is_private(DestinationIP), "Inbound",
+        ipv4_is_private(SourceIP) and ipv4_is_private(DestinationIP),      "Internal",
+        "External-to-External"
+    ),
+    ActionCategory = case(
+        DeviceAction in ("Drop", "Reject", "Block"), "Blocked",
+        DeviceAction == "Accept",                     "Allowed",
+        "Other"
+    ),
+    IsVPN = Activity has_any ("VPN", "Remote Access"),
+    IsMgmt = Activity has_any ("Policy Install", "Object Modified", "Admin")
+| extend RecommendedTier = case(
+    LogSeverity in (8, 9, 10) or LogSeverity in ("High", "Critical", "Emergency"), "Analytic",
+    IsVPN or IsMgmt,                                                                "Analytic",
+    ActionCategory == "Blocked",                                                    "Analytic",
+    ActionCategory == "Allowed" and Direction == "Outbound",                        "Analytic",
+    "DataLake"
+)
+| summarize
+    EventCount = count(),
+    DataSizeGB = round(sum(_BilledSize) / 1000 / 1000 / 1000, 3)
+    by RecommendedTier
+| extend
+    PercentOfTotal = round(100.0 * EventCount / toscalar(
+        CommonSecurityLog
+        | where TimeGenerated >= ago(30d)
+        | where DeviceVendor == "Check Point"
+        | count
+    ), 1)
+| order by RecommendedTier asc

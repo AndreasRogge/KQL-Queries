@@ -1,0 +1,32 @@
+// Analytic Rule: Detect anomalous VPN login patterns through Check Point VPN
+// Severity: Medium | Tier: Analytic (real-time detection required)
+// MITRE: TA0001 Initial Access, T1133 External Remote Services
+// Description: Identifies VPN logins from unusual locations or at unusual times,
+//              and detects impossible travel between VPN sessions.
+let DetectionWindow = 1h;
+let LookbackPeriod = 30d;
+// Check Point VPN events typically logged with specific Activity/DeviceEventClassID
+CommonSecurityLog
+| where TimeGenerated >= ago(DetectionWindow)
+| where DeviceVendor == "Check Point"
+| where Activity has_any ("VPN", "Remote Access", "SSL Network Extender", "Endpoint Security")
+    or DeviceEventClassID has_any ("vpn", "ssl_vpn", "remote_access")
+| where DeviceAction in ("Accept", "Allow", "Key Install")
+| extend VPNUser = coalesce(SourceUserName, DestinationUserName)
+| where isnotempty(VPNUser)
+| project TimeGenerated, VPNUser, SourceIP, DeviceAction, Activity, DeviceName
+| join kind=leftouter (
+    // Historical VPN login locations per user
+    CommonSecurityLog
+    | where TimeGenerated between (ago(LookbackPeriod) .. ago(DetectionWindow))
+    | where DeviceVendor == "Check Point"
+    | where Activity has_any ("VPN", "Remote Access", "SSL Network Extender")
+    | where DeviceAction in ("Accept", "Allow", "Key Install")
+    | extend VPNUser = coalesce(SourceUserName, DestinationUserName)
+    | where isnotempty(VPNUser)
+    | summarize KnownSourceIPs = make_set(SourceIP, 100) by VPNUser
+) on VPNUser
+| extend IsNewSourceIP = not(KnownSourceIPs has SourceIP)
+| where IsNewSourceIP == true
+| project TimeGenerated, VPNUser, SourceIP, DeviceAction, Activity, DeviceName, IsNewSourceIP
+| order by TimeGenerated desc

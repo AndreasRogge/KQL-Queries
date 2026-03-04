@@ -1,0 +1,28 @@
+// Analytic Rule: Alert on Check Point high and critical severity events
+// Severity: High | Tier: Analytic (immediate alerting required)
+// MITRE: TA0040 Impact, TA0005 Defense Evasion
+// Description: Surfaces high/critical severity firewall events that require SOC attention.
+//              Enriches with geo-IP and groups by event class for triage.
+CommonSecurityLog
+| where TimeGenerated >= ago(1h)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where LogSeverity in (8, 9, 10) or LogSeverity in ("High", "Critical", "Emergency")
+| extend
+    Severity = case(
+        LogSeverity in (10, "Emergency"), "Emergency",
+        LogSeverity in (9, "Critical"),   "Critical",
+        LogSeverity in (8, "High"),       "High",
+        tostring(LogSeverity)
+    ),
+    Direction = case(
+        ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP)), "Outbound",
+        not(ipv4_is_private(SourceIP)) and ipv4_is_private(DestinationIP), "Inbound",
+        ipv4_is_private(SourceIP) and ipv4_is_private(DestinationIP),      "Internal",
+        "External"
+    )
+| project
+    TimeGenerated, Severity, DeviceAction, Activity,
+    SourceIP, DestinationIP, DestinationPort, Protocol,
+    Direction, DeviceEventClassID, DeviceName,
+    Message = coalesce(Message, Activity)
+| order by TimeGenerated desc

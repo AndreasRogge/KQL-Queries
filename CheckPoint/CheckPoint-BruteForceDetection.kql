@@ -1,0 +1,33 @@
+// Analytic Rule: Detect brute force attempts against services behind Check Point firewall
+// Severity: Medium | Tier: Analytic (real-time detection required)
+// MITRE: TA0006 Credential Access, T1110 Brute Force
+// Description: Identifies external IPs with a high volume of dropped/rejected connections
+//              to common authentication ports (SSH, RDP, SMB, FTP) indicating brute force.
+let DetectionWindow = 15m;
+let FailedConnectionThreshold = 30;
+let AuthPorts = dynamic([22, 23, 3389, 445, 21, 3306, 1433, 5432, 8080, 8443]);
+CommonSecurityLog
+| where TimeGenerated >= ago(DetectionWindow)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where DeviceAction in ("Drop", "Reject", "Block")
+| where not(ipv4_is_private(SourceIP)) and ipv4_is_private(DestinationIP)
+| where DestinationPort in (AuthPorts)
+| summarize
+    FailedAttempts = count(),
+    DistinctTargets = dcount(DestinationIP),
+    DistinctPorts = dcount(DestinationPort),
+    TargetIPs = make_set(DestinationIP, 10),
+    TargetPorts = make_set(DestinationPort, 10),
+    FirstAttempt = min(TimeGenerated),
+    LastAttempt = max(TimeGenerated)
+    by SourceIP, DeviceName
+| where FailedAttempts >= FailedConnectionThreshold
+| extend
+    AttackType = case(
+        DistinctTargets > 3 and DistinctPorts == 1, "Password Spray (multi-target, single port)",
+        DistinctTargets == 1 and DistinctPorts == 1, "Brute Force (single target)",
+        DistinctTargets > 1 and DistinctPorts > 1,  "Distributed Scan",
+        "Brute Force"
+    ),
+    DurationMinutes = datetime_diff('minute', LastAttempt, FirstAttempt)
+| order by FailedAttempts desc

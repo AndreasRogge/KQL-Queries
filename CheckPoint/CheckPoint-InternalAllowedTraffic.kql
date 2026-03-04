@@ -1,0 +1,33 @@
+// Data Lake Query: Internal allowed traffic analysis (highest volume, lowest security value)
+// Tier: Sentinel Data Lake (this is typically 60-80% of all firewall data)
+// Description: Internal-to-internal allowed traffic is the largest data category.
+//              Kept in data lake for compliance retention and forensic investigation.
+//              NOT needed for real-time analytic rules.
+
+// Daily volume trend for internal traffic (cost planning)
+CommonSecurityLog
+| where TimeGenerated >= ago(30d)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where DeviceAction == "Accept"
+| where ipv4_is_private(SourceIP) and ipv4_is_private(DestinationIP)
+| project TimeGenerated, datasize = _BilledSize
+| summarize
+    EventCount = count(),
+    DataSizeGB = round(sum(datasize) / 1000 / 1000 / 1000, 3)
+    by bin(TimeGenerated, 1d)
+| render timechart
+
+
+// Top internal communication pairs (for baseline understanding)
+CommonSecurityLog
+| where TimeGenerated >= ago(7d)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where DeviceAction == "Accept"
+| where ipv4_is_private(SourceIP) and ipv4_is_private(DestinationIP)
+| summarize
+    EventCount = count(),
+    TotalSentMB = round(sum(SentBytes) / 1048576.0, 2),
+    DistinctPorts = dcount(DestinationPort)
+    by SourceIP, DestinationIP
+| order by EventCount desc
+| take 25
