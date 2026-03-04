@@ -6,7 +6,6 @@
 * **Created by:** [Name of the creator]
 * **Date:** [Date of test execution]
 * **Version:** [Version of the rule]
-* **Rule Documentation Link:** [Link to documentation]
 
 ## 2. Test Environment
 
