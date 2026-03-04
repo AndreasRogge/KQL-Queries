@@ -1,0 +1,46 @@
+// Data Lake Query: General Check Point traffic analysis and statistics
+// Tier: Basic/Auxiliary Logs (retrospective analysis, no real-time alerting needed)
+// Description: Provides traffic overview for capacity planning, compliance reporting,
+//              and forensic investigation. Runs against low-cost data lake tier.
+// Note: Basic Logs support only simple queries (no join, no union with other tables).
+
+// Top talkers by source IP (last 24 hours)
+CommonSecurityLog
+| where TimeGenerated >= ago(24h)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| summarize
+    TotalEvents = count(),
+    AllowedEvents = countif(DeviceAction == "Accept"),
+    BlockedEvents = countif(DeviceAction in ("Drop", "Reject", "Block")),
+    TotalSentBytes = sum(SentBytes),
+    TotalReceivedBytes = sum(ReceivedBytes),
+    DistinctDestinations = dcount(DestinationIP)
+    by SourceIP
+| extend
+    BlockRate = round(100.0 * BlockedEvents / TotalEvents, 1),
+    TotalSentMB = round(TotalSentBytes / 1048576.0, 2),
+    TotalReceivedMB = round(TotalReceivedBytes / 1048576.0, 2)
+| order by TotalEvents desc
+| take 50
+
+
+// Traffic by protocol and port (last 7 days)
+CommonSecurityLog
+| where TimeGenerated >= ago(7d)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| summarize
+    EventCount = count(),
+    DistinctSources = dcount(SourceIP),
+    AllowedCount = countif(DeviceAction == "Accept"),
+    BlockedCount = countif(DeviceAction in ("Drop", "Reject", "Block"))
+    by Protocol, DestinationPort
+| order by EventCount desc
+| take 30
+
+
+// Hourly traffic volume timechart (last 7 days)
+CommonSecurityLog
+| where TimeGenerated >= ago(7d)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| summarize EventCount = count() by bin(TimeGenerated, 1h), DeviceAction
+| render timechart

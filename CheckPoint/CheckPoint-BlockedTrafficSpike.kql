@@ -1,0 +1,33 @@
+// Analytic Rule: Detect abnormal spike in blocked/dropped connections from Check Point
+// Severity: Medium | Tier: Analytic (real-time detection required)
+// MITRE: TA0001 Initial Access, TA0043 Reconnaissance
+// Description: Compares the last hour of blocked traffic against a 14-day hourly baseline.
+//              Triggers when the current count exceeds 3x the standard deviation above average.
+let LookbackPeriod = 14d;
+let DetectionWindow = 1h;
+let ThresholdMultiplier = 3;
+let MinimumEvents = 50;
+// Baseline: average blocked events per hour over the lookback period
+let Baseline = CommonSecurityLog
+    | where TimeGenerated between (ago(LookbackPeriod) .. ago(DetectionWindow))
+    | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+    | where DeviceAction in ("Drop", "Reject", "Block")
+    | summarize HourlyCount = count() by bin(TimeGenerated, 1h)
+    | summarize AvgCount = avg(HourlyCount), StdDev = stdev(HourlyCount);
+// Current: blocked events in the last hour
+let Current = CommonSecurityLog
+    | where TimeGenerated >= ago(DetectionWindow)
+    | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+    | where DeviceAction in ("Drop", "Reject", "Block")
+    | summarize CurrentCount = count(),
+                DistinctSources = dcount(SourceIP),
+                DistinctDestinations = dcount(DestinationIP),
+                TopSources = make_set(SourceIP, 10),
+                TopDestPorts = make_set(DestinationPort, 10);
+Baseline
+| join kind=inner Current on $left.AvgCount == $left.AvgCount
+| where CurrentCount > MinimumEvents
+| where CurrentCount > AvgCount + (StdDev * ThresholdMultiplier)
+| extend AnomalyScore = round((CurrentCount - AvgCount) / StdDev, 2)
+| project CurrentCount, AvgCount = round(AvgCount, 0), StdDev = round(StdDev, 0),
+          AnomalyScore, DistinctSources, DistinctDestinations, TopSources, TopDestPorts

@@ -1,0 +1,42 @@
+// Analytic Rule: Detect potential data exfiltration via unusually large outbound transfers
+// Severity: High | Tier: Analytic (real-time detection required)
+// MITRE: TA0010 Exfiltration, T1048 Exfiltration Over Alternative Protocol
+// Description: Identifies internal hosts sending abnormally large volumes of data to
+//              external IPs. Uses a 14-day baseline per source to detect anomalies.
+let LookbackPeriod = 14d;
+let DetectionWindow = 1h;
+let ThresholdMultiplier = 3;
+let MinBytesThreshold = 104857600; // 100 MB minimum to reduce noise
+// Baseline: average outbound bytes per source per hour
+let Baseline = CommonSecurityLog
+    | where TimeGenerated between (ago(LookbackPeriod) .. ago(DetectionWindow))
+    | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+    | where DeviceAction == "Accept"
+    | where ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP))
+    | where SentBytes > 0
+    | summarize HourlySentBytes = sum(SentBytes) by SourceIP, bin(TimeGenerated, 1h)
+    | summarize AvgHourlySentBytes = avg(HourlySentBytes), StdDevBytes = stdev(HourlySentBytes) by SourceIP;
+// Current hour outbound volume
+CommonSecurityLog
+| where TimeGenerated >= ago(DetectionWindow)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where DeviceAction == "Accept"
+| where ipv4_is_private(SourceIP) and not(ipv4_is_private(DestinationIP))
+| where SentBytes > 0
+| summarize
+    CurrentSentBytes = sum(SentBytes),
+    DistinctDestinations = dcount(DestinationIP),
+    TopDestinations = make_set(DestinationIP, 10),
+    TopPorts = make_set(DestinationPort, 10),
+    ConnectionCount = count()
+    by SourceIP
+| join kind=inner Baseline on SourceIP
+| where CurrentSentBytes > MinBytesThreshold
+| where CurrentSentBytes > AvgHourlySentBytes + (StdDevBytes * ThresholdMultiplier)
+| extend
+    AnomalyScore = round((CurrentSentBytes - AvgHourlySentBytes) / StdDevBytes, 2),
+    CurrentSentMB = round(CurrentSentBytes / 1048576.0, 2),
+    AvgHourlyMB = round(AvgHourlySentBytes / 1048576.0, 2)
+| project SourceIP, CurrentSentMB, AvgHourlyMB, AnomalyScore,
+          DistinctDestinations, TopDestinations, TopPorts, ConnectionCount
+| order by AnomalyScore desc

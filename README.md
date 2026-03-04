@@ -11,6 +11,7 @@ Built for SOC analysts, security engineers, and IT administrators to accelerate 
 ```
 KQL-Queries/
   Sentinel/     Microsoft Sentinel, Entra ID, Syslog, FortiNet, Ingestion
+  CheckPoint/   Check Point Firewall analytic rules, tier splitting, DCR examples
   Hunting/      Cross-product threat hunting queries
   MDE/          Microsoft Defender for Endpoint
   MDI/          Microsoft Defender for Identity
@@ -25,12 +26,13 @@ KQL-Queries/
 | Folder | Description | Queries |
 |--------|-------------|:-------:|
 | [Sentinel](#sentinel) | Billing, Entra ID, ingestion monitoring, incident management, syslog, FortiNet | 20 |
+| [CheckPoint](#check-point-firewall) | Check Point Firewall analytic rules, data tier splitting, DCR transformations | 12 |
 | [Hunting](#hunting) | Threat hunting across MDE, Sentinel, and cloud services | 5 |
 | [MDE](#microsoft-defender-for-endpoint) | Defender for Endpoint detections | 1 |
 | [MDI](#microsoft-defender-for-identity) | Failed logon and account lockout anomaly detection | 3 |
 | [Intune](#intune) | Enrollment, compliance, policy changes, audit operations | 10 |
 | [GCP](#google-cloud-platform) | GCP audit log threat detections and anomaly analysis | 17 |
-| **Total** | | **56** |
+| **Total** | | **68** |
 
 ---
 
@@ -60,6 +62,24 @@ KQL-Queries/
 | [Syslog-ServerBelowThreshold.kql](Sentinel/Syslog-ServerBelowThreshold.kql) | Alert when syslog servers drop below a percentage of their average event volume |
 | [Teams-ExternalChatWithPersonalTenant.kql](Sentinel/Teams-ExternalChatWithPersonalTenant.kql) | Detect one-on-one Teams chats with personal (consumer) tenants |
 | [WindowsEvents-ParseEventID4738.kql](Sentinel/WindowsEvents-ParseEventID4738.kql) | Parse Event ID 4738 (user account changes) with full UserAccountControl flag decoding |
+
+### Check Point Firewall
+
+| File | Description |
+|------|-------------|
+| [CheckPoint-BlockedTrafficSpike.kql](CheckPoint/CheckPoint-BlockedTrafficSpike.kql) | Detect abnormal spike in blocked/dropped connections using 14-day baseline |
+| [CheckPoint-BruteForceDetection.kql](CheckPoint/CheckPoint-BruteForceDetection.kql) | Detect brute force attempts against services on authentication ports |
+| [CheckPoint-CriticalSeverityEvents.kql](CheckPoint/CheckPoint-CriticalSeverityEvents.kql) | Alert on high and critical severity firewall events with direction enrichment |
+| [CheckPoint-DataExfiltration.kql](CheckPoint/CheckPoint-DataExfiltration.kql) | Detect potential data exfiltration via anomalous outbound data volumes |
+| [CheckPoint-DCRTransformationExample.kql](CheckPoint/CheckPoint-DCRTransformationExample.kql) | DCR transformation templates to split data between Analytic, Basic, and Auxiliary tiers |
+| [CheckPoint-InternalAllowedTraffic.kql](CheckPoint/CheckPoint-InternalAllowedTraffic.kql) | Internal allowed traffic analysis for data lake tier (high volume, low security value) |
+| [CheckPoint-PolicyChangeDetection.kql](CheckPoint/CheckPoint-PolicyChangeDetection.kql) | Detect firewall policy installs, rule changes, and admin login events |
+| [CheckPoint-PortScanDetection.kql](CheckPoint/CheckPoint-PortScanDetection.kql) | Detect vertical and horizontal port scanning activity |
+| [CheckPoint-SuspiciousOutboundTraffic.kql](CheckPoint/CheckPoint-SuspiciousOutboundTraffic.kql) | Detect outbound connections to never-before-seen external destinations |
+| [CheckPoint-ThreatIntelMatch.kql](CheckPoint/CheckPoint-ThreatIntelMatch.kql) | Correlate firewall traffic with Threat Intelligence indicators |
+| [CheckPoint-TierSplitAnalysis.kql](CheckPoint/CheckPoint-TierSplitAnalysis.kql) | Analyze data volumes per traffic category with cost comparison across tiers |
+| [CheckPoint-TrafficOverview.kql](CheckPoint/CheckPoint-TrafficOverview.kql) | General traffic overview with top talkers, protocol breakdown, and volume trends |
+| [CheckPoint-VPNAnomalousLogin.kql](CheckPoint/CheckPoint-VPNAnomalousLogin.kql) | Detect VPN logins from previously unseen source IPs |
 
 ### Hunting
 
@@ -133,6 +153,7 @@ All files follow the pattern: **`Category-PascalCaseDescription.kql`**
 | `Billing-` | Cost and usage analytics |
 | `Entra-` | Microsoft Entra ID (Azure AD) |
 | `Example-` | Learning and reference examples |
+| `CheckPoint-` | Check Point Firewall |
 | `FortiNet-` | FortiGate / FortiNet firewalls |
 | `GCP-` | Google Cloud Platform |
 | `Hunting-` | Cross-product threat hunting |
@@ -164,6 +185,7 @@ All files follow the pattern: **`Category-PascalCaseDescription.kql`**
 - **Microsoft Sentinel / Defender:** Sentinel workspace or Microsoft 365 Defender access with Security Reader (minimum) permissions
 - **GCP Queries:** GCP audit logs ingested into Microsoft Sentinel via the [GCP Audit Logs connector](https://learn.microsoft.com/en-us/azure/sentinel/connect-google-cloud-platform)
 - **Intune Queries:** Intune diagnostic logs forwarded to a Log Analytics workspace
+- **Check Point Queries:** Check Point logs ingested via [CEF via AMA connector](https://learn.microsoft.com/en-us/azure/sentinel/connect-cef-syslog-ama) into CommonSecurityLog
 - Relevant data connectors enabled for the queries you want to use
 
 ---

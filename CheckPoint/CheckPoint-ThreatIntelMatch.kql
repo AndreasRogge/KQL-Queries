@@ -1,0 +1,39 @@
+// Analytic Rule: Match Check Point traffic against Threat Intelligence indicators
+// Severity: High | Tier: Analytic (real-time TI correlation required)
+// MITRE: TA0011 Command and Control
+// Description: Correlates Check Point firewall logs with Microsoft Sentinel Threat
+//              Intelligence indicators (IP-based). Matches both source and destination IPs.
+let DetectionWindow = 1h;
+// Get active TI indicators
+let TI_IPs = ThreatIntelligenceIndicator
+    | where isnotempty(NetworkIP) or isnotempty(NetworkSourceIP) or isnotempty(NetworkDestinationIP)
+    | where Active == true and ExpirationDateTime > now()
+    | extend TI_IP = coalesce(NetworkIP, NetworkSourceIP, NetworkDestinationIP)
+    | where isnotempty(TI_IP)
+    | summarize LatestIndicatorTime = arg_max(TimeGenerated, *) by TI_IP;
+// Match against firewall logs
+CommonSecurityLog
+| where TimeGenerated >= ago(DetectionWindow)
+| where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+| where isnotempty(SourceIP) or isnotempty(DestinationIP)
+| extend CheckIP = iff(not(ipv4_is_private(DestinationIP)), DestinationIP, SourceIP)
+| join kind=inner (TI_IPs) on $left.CheckIP == $right.TI_IP
+| project
+    TimeGenerated, DeviceAction, Activity,
+    SourceIP, DestinationIP, DestinationPort, Protocol,
+    TI_IP, ThreatType, ThreatSeverity = ConfidenceScore,
+    Description, DeviceName,
+    Direction = iff(CheckIP == DestinationIP, "Outbound to malicious", "Inbound from malicious"),
+    Action_Taken = iff(DeviceAction in ("Drop", "Reject", "Block"), "Blocked", "Allowed")
+| order by TimeGenerated desc
+
+
+// Alternative: Match against Sentinel Watchlist for custom IOC list
+// Replace [PLACEHOLDER] with your watchlist alias
+// let IOC_IPs = _GetWatchlist('[PLACEHOLDER]') | project IP = SearchKey;
+// CommonSecurityLog
+// | where TimeGenerated >= ago(1h)
+// | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
+// | where SourceIP in (IOC_IPs) or DestinationIP in (IOC_IPs)
+// | extend MatchedIOC = iff(SourceIP in (IOC_IPs), SourceIP, DestinationIP)
+// | project TimeGenerated, DeviceAction, SourceIP, DestinationIP, DestinationPort, MatchedIOC, DeviceName

@@ -1,0 +1,107 @@
+// DCR Transformation: Split Check Point data between Analytic and Basic/Auxiliary tiers
+// Description: Use these KQL transformations in a Data Collection Rule (DCR) to route
+//              Check Point firewall data to the appropriate Sentinel log tier.
+//
+// ============================================================================
+// TIER RECOMMENDATION OVERVIEW
+// ============================================================================
+//
+// ANALYTIC TIER (full KQL support, real-time alerting, higher cost ~$5.36/GB)
+// Send this data to the Analytic tier:
+//   1. Blocked/Dropped/Rejected traffic (all directions)  --> Security detections
+//   2. Outbound allowed traffic (internal->external)       --> C2, exfiltration, TI matching
+//   3. High/Critical severity events                       --> Immediate SOC attention
+//   4. VPN authentication events                           --> Anomalous access detection
+//   5. Management/policy change events                     --> Audit trail, defense evasion
+//   6. IPS/IDS/Threat Prevention blade events              --> Active threat detection
+//
+// BASIC LOGS TIER (limited KQL, no real-time alerting, lower cost ~$1.10/GB)
+// Send this data to the Basic Logs tier:
+//   7. Inbound allowed traffic (external->internal)        --> Forensic investigation
+//   8. DNS allowed queries (high volume)                   --> Retroactive TI matching
+//
+// AUXILIARY LOGS TIER (minimal KQL, cheapest, long retention ~$0.19/GB)
+// Send this data to the Auxiliary tier:
+//   9. Internal-to-internal allowed traffic                --> Compliance retention
+//  10. Routine accept logs for known-good traffic          --> Capacity planning
+//
+// ============================================================================
+// TYPICAL VOLUME SPLIT (varies by environment):
+//   Analytic:  ~20-35% of total Check Point data
+//   Basic:     ~10-20% of total Check Point data
+//   Auxiliary:  ~50-70% of total Check Point data
+// ============================================================================
+//
+// WHY THIS SPLIT?
+// - Internal allowed traffic is 60-80% of volume but has the LOWEST security value
+// - Blocked traffic + outbound traffic is 20-35% but drives ALL detection rules
+// - Moving internal allowed traffic to Auxiliary saves 60-80% of ingestion cost
+// - You keep full detection capability on the Analytic tier
+// - Basic/Aux data is still searchable for forensics (with query limitations)
+//
+// ============================================================================
+// ANALYTIC RULE USE CASES (require Analytic tier data):
+// ============================================================================
+// 1.  Blocked Traffic Spike         - Anomaly detection on deny events
+// 2.  Brute Force Detection         - High-volume rejected connections to auth ports
+// 3.  Port Scan Detection           - Vertical/horizontal scanning patterns
+// 4.  Threat Intelligence Matching  - Correlate IPs with TI indicators (requires join)
+// 5.  Suspicious Outbound Traffic   - Connections to never-before-seen destinations
+// 6.  Data Exfiltration             - Anomalous outbound data volume per host
+// 7.  VPN Anomalous Login           - New source IPs for VPN users
+// 8.  Policy/Config Changes         - Firewall rule modifications, policy installs
+// 9.  Critical Severity Events      - High/Critical/Emergency log events
+// 10. IPS Blade Alerts              - Threat Prevention and Anti-Bot detections
+//
+// ============================================================================
+
+// DCR Transformation for ANALYTIC tier (CommonSecurityLog table)
+// Apply this as a DCR transformation to route security-relevant data to Analytics
+source
+| where DeviceVendor == "Check Point"
+| where
+    // Blocked/Dropped traffic in any direction
+    DeviceAction in ("Drop", "Reject", "Block", "Prevent")
+    // Outbound allowed traffic (internal to external)
+    or (DeviceAction == "Accept"
+        and ipv4_is_private(SourceIP) == true
+        and ipv4_is_private(DestinationIP) == false)
+    // High/Critical severity events
+    or LogSeverity in (8, 9, 10)
+    or LogSeverity in ("High", "Critical", "Emergency")
+    // VPN events
+    or Activity has_any ("VPN", "Remote Access", "SSL Network Extender", "Endpoint Security")
+    // Management and policy events
+    or Activity has_any ("Policy Install", "Object Modified", "Rule Modified",
+                         "Rule Added", "Rule Deleted", "Admin", "Log In", "Log Out")
+    // IPS/Threat Prevention blade events
+    or Activity has_any ("IPS", "Threat Prevention", "Anti-Bot", "Anti-Virus",
+                         "Threat Emulation", "Threat Extraction")
+    or DeviceEventClassID has_any ("ips", "threat", "anti_bot", "anti_virus")
+
+
+// DCR Transformation for BASIC LOGS tier (CommonSecurityLog_BasicLogs table)
+// Inbound allowed traffic and DNS queries
+source
+| where DeviceVendor == "Check Point"
+| where DeviceAction == "Accept"
+| where
+    // Inbound allowed traffic
+    (ipv4_is_private(SourceIP) == false and ipv4_is_private(DestinationIP) == true)
+    // DNS queries
+    or Activity has "dns"
+    or DestinationPort == 53
+// Exclude events already captured in Analytic tier
+| where not(LogSeverity in (8, 9, 10))
+| where not(Activity has_any ("VPN", "Remote Access", "IPS", "Threat Prevention"))
+
+
+// DCR Transformation for AUXILIARY LOGS tier (long-term retention, lowest cost)
+// Everything else: internal-to-internal allowed traffic
+source
+| where DeviceVendor == "Check Point"
+| where DeviceAction == "Accept"
+| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == true
+// Exclude VPN/mgmt events (those go to Analytic)
+| where not(Activity has_any ("VPN", "Remote Access", "Policy Install", "Admin"))
+| where not(LogSeverity in (8, 9, 10))
