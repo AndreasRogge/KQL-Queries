@@ -20,13 +20,13 @@
 
 | Test Case | Description | Expected Result | Actual Result | Successful? (Yes/No) | Notes |
 |-----------|-------------|-----------------|---------------|----------------------|-------|
-| TF-01 | Simulated execution to trigger the rule | Rule detects activity and creates an alert | [Detection result] | [Yes/No – Adjustments needed?] | |
-| TF-02 | False positive test: normal data flow without provoking | Rule does not generate unnecessary alert | [Detection result] | [Yes/No – False positives?] | |
-| TF-03 | Test attack patterns with variations | Rule also detects slightly modified patterns | [Detection result] | [Yes/No – Further adjustments needed?] | |
-| TF-04 | Performance test under high data load | Rule does not cause significant delays | [System impact result] | [Yes/No – Performance adjustments?] | |
-| TF-05 | Test threshold adjustments | Rule remains reliable with different configurations | [Result] | [Yes/No – Define optimal thresholds?] | |
+| TC-01 | Simulated execution to trigger the rule | Rule detects activity and creates an alert | [Detection result] | [Yes/No – Adjustments needed?] | |
+| TC-02 | False positive test: normal data flow without provoking | Rule does not generate unnecessary alert | [Detection result] | [Yes/No – False positives?] | |
+| TC-03 | Test attack patterns with variations | Rule also detects slightly modified patterns | [Detection result] | [Yes/No – Further adjustments needed?] | |
+| TC-04 | Performance test under high data load | Rule does not cause significant delays | [System impact result] | [Yes/No – Performance adjustments?] | |
+| TC-05 | Test threshold adjustments | Rule remains reliable with different configurations | [Result] | [Yes/No – Define optimal thresholds?] | |
 
-> TF = Test Case
+> TC = Test Case
 
 ## 4. Findings & Adjustments
 
