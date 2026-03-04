@@ -1,0 +1,41 @@
+// Analytic Rule: Detect firewall policy and configuration changes on Check Point
+// Severity: Medium | Tier: Analytic (audit trail, immediate visibility required)
+// MITRE: TA0005 Defense Evasion, T1562.004 Disable or Modify System Firewall
+// Description: Monitors for Check Point management events indicating policy installs,
+//              rule changes, admin logins, and configuration modifications.
+let DetectionWindow = 1h;
+CommonSecurityLog
+| where TimeGenerated >= ago(DetectionWindow)
+| where DeviceVendor == "Check Point"
+| where Activity has_any (
+    "Policy Install", "Install Policy",
+    "Log In", "Log Out",
+    "Object Modified", "Object Created", "Object Deleted",
+    "Rule Modified", "Rule Added", "Rule Deleted",
+    "Admin", "SmartConsole", "Management"
+)
+    or DeviceEventClassID has_any ("mgmt", "policy", "admin", "audit")
+| extend
+    AdminUser = coalesce(SourceUserName, DestinationUserName),
+    ChangeType = case(
+        Activity has "Policy Install", "Policy Installed",
+        Activity has "Log In",         "Admin Login",
+        Activity has "Modified",       "Configuration Modified",
+        Activity has "Created",        "Object Created",
+        Activity has "Deleted",        "Object Deleted",
+        Activity has "Rule",           "Rule Change",
+        "Other Management Event"
+    )
+| project TimeGenerated, ChangeType, AdminUser, Activity, SourceIP,
+          DeviceName, DeviceEventClassID, Message
+| order by TimeGenerated desc
+
+
+// Summarized view: group changes by admin and type
+// CommonSecurityLog
+// | where TimeGenerated >= ago(24h)
+// | where DeviceVendor == "Check Point"
+// | where Activity has_any ("Policy Install", "Object Modified", "Rule Modified", "Rule Added", "Rule Deleted")
+// | extend AdminUser = coalesce(SourceUserName, DestinationUserName)
+// | summarize ChangeCount = count(), Changes = make_set(Activity, 10) by AdminUser, DeviceName
+// | order by ChangeCount desc
