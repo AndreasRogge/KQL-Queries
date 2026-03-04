@@ -1,0 +1,48 @@
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has "su:" or (ProcessName == "su" and SyslogMessage has_any ("session opened", "Successful su", "FAILED su", "authentication failure", "(to "))
+| extend 
+    EventType = case(
+        SyslogMessage has "Successful su" or (SyslogMessage has "session opened" and SyslogMessage has "su:"), "Success",
+        SyslogMessage has "FAILED su" or SyslogMessage has "authentication failure", "Failure",
+        SyslogMessage has "session opened", "SessionOpened",
+        SyslogMessage has "session closed", "SessionClosed",
+        "Other"
+    ),
+    // Parse the source user and target user
+    SourceUser = coalesce(
+        extract(@"FAILED su for \S+ by (\S+)", 1, SyslogMessage),
+        extract(@"Successful su for \S+ by (\S+)", 1, SyslogMessage),
+        extract(@"\(uid=\d+\)$", 0, SyslogMessage),
+        extract(@"session opened for user \S+\(uid=\d+\) by (\S+)", 1, SyslogMessage)
+    ),
+    TargetUser = coalesce(
+        extract(@"Successful su for (\S+)", 1, SyslogMessage),
+        extract(@"FAILED su for (\S+)", 1, SyslogMessage),
+        extract(@"session opened for user (\S+)", 1, SyslogMessage),
+        extract(@"\(to (\S+)\)", 1, SyslogMessage)
+    ),
+    Terminal = extract(@"on (\S+)", 1, SyslogMessage)
+| where EventType in ("Success", "Failure")
+| extend 
+    IsRootTarget = (TargetUser == "root"),
+    Severity = case(
+        EventType == "Success" and TargetUser == "root", "High",
+        EventType == "Failure" and TargetUser == "root", "Medium",
+        EventType == "Success", "Medium",
+        "Low"
+    )
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    SuccessCount = countif(EventType == "Success"),
+    FailureCount = countif(EventType == "Failure"),
+    TargetUsers = make_set(TargetUser, 25),
+    TargetHosts = make_set(HostName, 25)
+    by SourceUser, IsRootTarget, Severity
+| project 
+    StartTime, EndTime, SourceUser, IsRootTarget, Severity,
+    SuccessCount, FailureCount, TargetUsers, TargetHosts
+| order by IsRootTarget desc, FailureCount desc

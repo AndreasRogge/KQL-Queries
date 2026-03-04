@@ -1,0 +1,37 @@
+// Adjust timezone and business hours for customer
+let Timezone = "Europe/Berlin"; // or "America/New_York", etc.
+let BusinessStartHour = 7;
+let BusinessEndHour = 19;
+let WeekendDays = dynamic(["Saturday", "Sunday"]);
+let LookbackPeriod = 7d;
+// Optionally exclude service accounts
+let ServiceAccounts = dynamic(["svc_backup", "svc_monitor", "ansible", "nagios"]);
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has "Accepted" and SyslogMessage has_any ("password", "publickey", "keyboard-interactive")
+| extend 
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    TargetUserName = extract(@"Accepted \S+ for (\S+)", 1, SyslogMessage),
+    AuthMethod = extract(@"Accepted (\S+)", 1, SyslogMessage)
+| where isnotempty(TargetUserName)
+| where TargetUserName !in (ServiceAccounts)
+| extend 
+    LocalTime = datetime_utc_to_local(TimeGenerated, Timezone),
+    LocalHour = hourofday(datetime_utc_to_local(TimeGenerated, Timezone)),
+    LocalDayOfWeek = dayofweek(datetime_utc_to_local(TimeGenerated, Timezone)),
+    DayName = format_datetime(datetime_utc_to_local(TimeGenerated, Timezone), "dddd")
+| where LocalHour < BusinessStartHour or LocalHour >= BusinessEndHour or DayName in (WeekendDays)
+| extend 
+    IsWeekend = DayName in (WeekendDays),
+    Severity = case(
+        DayName in (WeekendDays) and (LocalHour >= 0 and LocalHour < 6), "High",
+        DayName in (WeekendDays), "Medium",
+        LocalHour >= 0 and LocalHour < 6, "Medium",
+        "Low"
+    )
+| project 
+    TimeGenerated, LocalTime, DayName, LocalHour,
+    HostName, TargetUserName, SourceIP, AuthMethod,
+    IsWeekend, Severity
+| order by TimeGenerated desc

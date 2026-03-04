@@ -1,0 +1,71 @@
+let LookbackPeriod = 1d;
+let BaselinePeriod = 14d;
+// Build a baseline of normal sudo usage per user
+let SudoBaseline = 
+    Syslog
+    | where TimeGenerated between (ago(BaselinePeriod) .. ago(LookbackPeriod))
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "sudo:" and SyslogMessage has "COMMAND="
+    | extend 
+        SudoUser = extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+        SudoCommand = extract(@"COMMAND=(.*)", 1, SyslogMessage)
+    | where isnotempty(SudoUser)
+    | summarize 
+        BaselineCommandCount = count(),
+        BaselineDistinctCommands = dcount(SudoCommand),
+        BaselineCommands = make_set(SudoCommand, 100)
+        by SudoUser, HostName;
+// Current period sudo activity
+let CurrentSudo = 
+    Syslog
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "sudo:" and SyslogMessage has "COMMAND="
+    | extend 
+        SudoUser = extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+        SudoCommand = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+        RunAsUser = extract(@"USER=(\S+)", 1, SyslogMessage),
+        WorkingDir = extract(@"PWD=(\S+)", 1, SyslogMessage),
+        TTY = extract(@"TTY=(\S+)", 1, SyslogMessage)
+    | where isnotempty(SudoUser);
+CurrentSudo
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    CurrentCommandCount = count(),
+    CurrentDistinctCommands = dcount(SudoCommand),
+    CurrentCommands = make_set(SudoCommand, 100),
+    RunAsUsers = make_set(RunAsUser, 10)
+    by SudoUser, HostName
+| join kind=leftouter (SudoBaseline) on SudoUser, HostName
+| extend 
+    BaselineCommandCount = coalesce(BaselineCommandCount, 0),
+    BaselineDistinctCommands = coalesce(BaselineDistinctCommands, 0),
+    BaselineCommands = coalesce(BaselineCommands, dynamic([]))
+| extend 
+    // Find commands never seen in baseline
+    NewCommands = set_difference(CurrentCommands, BaselineCommands),
+    NewCommandCount = array_length(set_difference(CurrentCommands, BaselineCommands)),
+    CommandCountRatio = iff(BaselineCommandCount > 0, round(toreal(CurrentCommandCount) / (toreal(BaselineCommandCount) / 14.0), 2), toreal(999)),
+    IsNewUser = (BaselineCommandCount == 0)
+| where NewCommandCount > 0 or CommandCountRatio > 3.0 or IsNewUser
+| extend 
+    Severity = case(
+        IsNewUser and CurrentCommandCount > 5, "High",
+        NewCommandCount > 10, "High",
+        CommandCountRatio > 5.0, "Medium",
+        NewCommandCount > 3, "Medium",
+        "Low"
+    ),
+    AnomalyType = case(
+        IsNewUser, "New sudo user - no baseline",
+        NewCommandCount > 0 and CommandCountRatio > 3.0, "New commands + volume spike",
+        NewCommandCount > 0, "Previously unseen commands",
+        CommandCountRatio > 3.0, "Volume spike",
+        "Anomalous"
+    )
+| project 
+    StartTime, EndTime, SudoUser, HostName, Severity, AnomalyType,
+    CurrentCommandCount, BaselineCommandCount, CommandCountRatio,
+    NewCommandCount, NewCommands, RunAsUsers, IsNewUser
+| order by Severity asc, NewCommandCount desc

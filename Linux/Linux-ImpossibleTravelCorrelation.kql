@@ -1,0 +1,44 @@
+let LookbackPeriod = 1d;
+let ImpossibleTravelMinutes = 60;  // Minimum time that would make travel impossible
+// Get Linux successful logins with IP
+let LinuxLogins = 
+    Syslog
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "Accepted" and SyslogMessage has_any ("password", "publickey")
+    | extend 
+        SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+        TargetUserName = tolower(extract(@"Accepted \S+ for (\S+)", 1, SyslogMessage))
+    | where isnotempty(SourceIP) and isnotempty(TargetUserName)
+    | project LoginTime = TimeGenerated, SourceIP, TargetUserName, LoginSource = "Linux_SSH", HostName;
+// Get Entra ID / Azure AD sign-ins
+let EntraLogins = 
+    SigninLogs
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where ResultType == "0"  // Successful sign-in
+    | extend TargetUserName = tolower(UserPrincipalName)
+    | project LoginTime = TimeGenerated, SourceIP = IPAddress, TargetUserName, LoginSource = "EntraID",
+              Location = strcat(LocationDetails.city, ", ", LocationDetails.state, ", ", LocationDetails.countryOrRegion),
+              HostName = "";
+// Combine both sources
+let AllLogins = union LinuxLogins, EntraLogins;
+// Self-join to find the same user with different IPs within the time window
+AllLogins
+| join kind=inner (AllLogins) on TargetUserName
+| where LoginTime1 > LoginTime
+| where SourceIP != SourceIP1
+| where datetime_diff('minute', LoginTime1, LoginTime) <= ImpossibleTravelMinutes
+| extend TimeDifferenceMinutes = datetime_diff('minute', LoginTime1, LoginTime)
+| where not(ipv4_is_private(SourceIP) and ipv4_is_private(SourceIP1)) // Only alert if at least one IP is public
+| summarize 
+    arg_min(TimeDifferenceMinutes, *)
+    by TargetUserName, SourceIP, SourceIP1
+| project 
+    FirstLoginTime = LoginTime,
+    SecondLoginTime = LoginTime1,
+    TimeDifferenceMinutes,
+    TargetUserName,
+    FirstIP = SourceIP, FirstSource = LoginSource, FirstHost = HostName,
+    SecondIP = SourceIP1, SecondSource = LoginSource1, SecondHost = HostName1,
+    Severity = "High"
+| order by TimeDifferenceMinutes asc

@@ -1,0 +1,42 @@
+let LookbackPeriod = 1d;
+let AlertThreshold = 1;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has "sudo:" and SyslogMessage has_any ("NOT in sudoers", "user NOT in sudoers", "incident")
+| extend 
+    AttemptingUser = extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+    AttemptedCommand = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+    TTY = extract(@"TTY=(\S+)", 1, SyslogMessage),
+    WorkingDir = extract(@"PWD=(\S+)", 1, SyslogMessage),
+    RunAsUser = extract(@"USER=(\S+)", 1, SyslogMessage)
+| where isnotempty(AttemptingUser)
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    AttemptCount = count(),
+    AttemptedCommands = make_set(AttemptedCommand, 50),
+    DistinctCommands = dcount(AttemptedCommand),
+    TargetHosts = make_set(HostName, 25),
+    TargetUsers = make_set(RunAsUser, 10)
+    by AttemptingUser
+| where AttemptCount >= AlertThreshold
+| extend 
+    Severity = case(
+        AttemptCount > 10, "High",
+        AttemptCount > 3, "Medium",
+        "Low"
+    ),
+    // High-risk commands that indicate adversarial intent
+    ContainsDangerousCommands = AttemptedCommands has_any (
+        "/bin/bash", "/bin/sh", "/etc/shadow", "/etc/passwd",
+        "chmod", "chown", "useradd", "usermod", "visudo",
+        "iptables", "systemctl", "journalctl"
+    )
+| extend 
+    Severity = iff(ContainsDangerousCommands and Severity == "Low", "Medium", Severity)
+| project 
+    StartTime, EndTime, AttemptingUser, Severity,
+    AttemptCount, DistinctCommands, AttemptedCommands,
+    TargetUsers, TargetHosts, ContainsDangerousCommands
+| order by AttemptCount desc

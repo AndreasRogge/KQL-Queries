@@ -1,0 +1,46 @@
+let FailureThreshold = 5;
+let TimeWindow = 15m;
+let LookbackPeriod = 1d;
+let FailedLogins = 
+    Syslog
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "Failed password"
+    | extend 
+        SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+        TargetUserName = coalesce(
+            extract(@"Failed password for invalid user (\S+)", 1, SyslogMessage),
+            extract(@"Failed password for (\S+)", 1, SyslogMessage)
+        )
+    | where isnotempty(SourceIP) and isnotempty(TargetUserName)
+    | summarize 
+        FailedCount = count(),
+        FailureStartTime = min(TimeGenerated),
+        FailureEndTime = max(TimeGenerated)
+        by SourceIP, TargetUserName, HostName;
+let SuccessfulLogins = 
+    Syslog
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "Accepted" and SyslogMessage has_any ("password", "publickey")
+    | extend 
+        SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+        TargetUserName = extract(@"Accepted \S+ for (\S+)", 1, SyslogMessage),
+        AuthMethod = extract(@"Accepted (\S+)", 1, SyslogMessage)
+    | where isnotempty(SourceIP) and isnotempty(TargetUserName)
+    | project SuccessTime = TimeGenerated, SourceIP, TargetUserName, HostName, AuthMethod;
+FailedLogins
+| where FailedCount >= FailureThreshold
+| join kind=inner (SuccessfulLogins) on SourceIP, TargetUserName, HostName
+| where SuccessTime between (FailureStartTime .. (FailureEndTime + TimeWindow))
+| project 
+    FailureStartTime, FailureEndTime, SuccessTime,
+    SourceIP, TargetUserName, HostName, AuthMethod,
+    FailedCount,
+    TimeBetweenLastFailureAndSuccess = datetime_diff('second', SuccessTime, FailureEndTime),
+    Severity = case(
+        FailedCount > 50, "High",
+        FailedCount > 20, "Medium",
+        "Low"
+    )
+| order by FailedCount desc

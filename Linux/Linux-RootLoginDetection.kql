@@ -1,0 +1,32 @@
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has_any ("Accepted", "session opened") 
+    and SyslogMessage has "root"
+// Exclude su/sudo-based root sessions (covered separately)
+| where not(SyslogMessage has_any ("su:", "sudo:"))
+| extend 
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    AuthMethod = extract(@"Accepted (\S+)", 1, SyslogMessage),
+    SourcePort = extract(@"port (\d+)", 1, SyslogMessage),
+    EventType = case(
+        SyslogMessage has "Accepted password", "SSH_Password",
+        SyslogMessage has "Accepted publickey", "SSH_PublicKey",
+        SyslogMessage has "Accepted keyboard-interactive", "SSH_KeyboardInteractive",
+        SyslogMessage has "session opened" and SyslogMessage has "LOGIN", "Console_Login",
+        SyslogMessage has "session opened", "Session_Opened",
+        "Other"
+    )
+| extend 
+    Severity = case(
+        EventType == "SSH_Password", "High",     // Password-based root SSH is critical
+        EventType == "SSH_KeyboardInteractive", "High",
+        EventType == "Console_Login", "Medium",
+        "Medium"
+    )
+| project 
+    TimeGenerated, HostName, EventType, Severity,
+    SourceIP, AuthMethod, SourcePort,
+    SyslogMessage
+| order by TimeGenerated desc

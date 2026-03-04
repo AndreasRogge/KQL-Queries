@@ -1,0 +1,44 @@
+// Populate _GetWatchlist('DisabledAccounts') with columns: UserName, DisabledDate, Reason
+// Or define a static list:
+let DormantAccounts = dynamic(["oldadmin", "tempuser", "contractor1", "testaccount"]);
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has_any ("Accepted", "session opened", "Failed password")
+| extend 
+    TargetUserName = coalesce(
+        extract(@"Accepted \S+ for (\S+)", 1, SyslogMessage),
+        extract(@"session opened for user (\S+)", 1, SyslogMessage),
+        extract(@"Failed password for (\S+)", 1, SyslogMessage)
+    ),
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    EventType = case(
+        SyslogMessage has "Accepted", "SuccessfulLogin",
+        SyslogMessage has "session opened", "SessionOpened",
+        SyslogMessage has "Failed password", "FailedLogin",
+        "Other"
+    )
+| where isnotempty(TargetUserName)
+| where TargetUserName in (DormantAccounts)
+// Or use watchlist: | join kind=inner (_GetWatchlist('DisabledAccounts') | project UserName) on $left.TargetUserName == $right.UserName
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    TotalEvents = count(),
+    SuccessfulLogins = countif(EventType == "SuccessfulLogin"),
+    FailedLogins = countif(EventType == "FailedLogin"),
+    SourceIPs = make_set(SourceIP, 25),
+    TargetHosts = make_set(HostName, 25)
+    by TargetUserName
+| extend 
+    Severity = case(
+        SuccessfulLogins > 0, "High",
+        FailedLogins > 10, "Medium",
+        "Low"
+    )
+| project 
+    StartTime, EndTime, TargetUserName, Severity,
+    SuccessfulLogins, FailedLogins, TotalEvents,
+    SourceIPs, TargetHosts
+| order by SuccessfulLogins desc, FailedLogins desc

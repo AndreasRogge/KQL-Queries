@@ -1,0 +1,44 @@
+let FailureThreshold = 15;
+let BinTime = 5m;
+let LookbackPeriod = 1h;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has "Failed password"
+| parse SyslogMessage with * "Failed password for " * " from " SourceIP " port " SourcePort " " *
+| parse SyslogMessage with * "Failed password for invalid user " InvalidUser " from " * 
+| parse SyslogMessage with * "Failed password for " TargetUser " from " *
+| extend 
+    TargetUserName = iif(isnotempty(InvalidUser), InvalidUser, extract(@"Failed password for (\S+)", 1, SyslogMessage)),
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    IsInvalidUser = iif(SyslogMessage has "invalid user", true, false)
+| where isnotempty(SourceIP)
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    FailedAttempts = count(),
+    DistinctTargetUsers = dcount(TargetUserName),
+    TargetUserList = make_set(TargetUserName, 50),
+    TargetHostList = make_set(HostName, 25),
+    DistinctTargetHosts = dcount(HostName),
+    InvalidUserAttempts = countif(IsInvalidUser == true)
+    by SourceIP, bin(TimeGenerated, BinTime)
+| where FailedAttempts >= FailureThreshold
+| extend 
+    AttackType = case(
+        DistinctTargetUsers > 5 and DistinctTargetHosts > 1, "Distributed Password Spray",
+        DistinctTargetUsers > 5, "Password Spray",
+        DistinctTargetHosts > 1, "Distributed Brute Force",
+        "Targeted Brute Force"
+    ),
+    Severity = case(
+        FailedAttempts > 100, "High",
+        FailedAttempts > 50, "Medium",
+        "Low"
+    )
+| project 
+    StartTime, EndTime, SourceIP, AttackType, Severity,
+    FailedAttempts, InvalidUserAttempts,
+    DistinctTargetUsers, TargetUserList,
+    DistinctTargetHosts, TargetHostList
+| order by FailedAttempts desc

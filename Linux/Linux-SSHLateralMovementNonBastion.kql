@@ -1,0 +1,46 @@
+let LookbackPeriod = 1d;
+let PrivateRanges = dynamic(["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]);
+// Define approved bastion/jump hosts
+let BastionHosts = dynamic(["10.0.1.10", "10.0.1.11", "bastion01", "jumphost01"]);
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has "Accepted" and SyslogMessage has_any ("password", "publickey", "keyboard-interactive")
+| extend 
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    TargetUserName = extract(@"Accepted \S+ for (\S+)", 1, SyslogMessage),
+    AuthMethod = extract(@"Accepted (\S+)", 1, SyslogMessage)
+| where isnotempty(SourceIP)
+// Only internal-to-internal connections
+| where ipv4_is_in_any_range(SourceIP, PrivateRanges)
+// Exclude known bastion hosts
+| where SourceIP !in (BastionHosts)
+| extend 
+    SourceHostName = SourceIP,  // Will be IP unless reverse DNS is in log
+    TargetHostName = HostName
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    ConnectionCount = count(),
+    TargetUsers = make_set(TargetUserName, 25),
+    TargetHosts = make_set(HostName, 25),
+    AuthMethods = make_set(AuthMethod, 10),
+    DistinctTargetHosts = dcount(HostName)
+    by SourceIP
+| extend 
+    Severity = case(
+        DistinctTargetHosts > 5, "High",       // Scanning many hosts
+        DistinctTargetHosts > 2, "Medium",
+        ConnectionCount > 10, "Medium",
+        "Low"
+    ),
+    MovementType = case(
+        DistinctTargetHosts > 5, "Potential Lateral Movement - Multiple Hosts",
+        DistinctTargetHosts > 1, "Multi-Host Access",
+        "Single-Host Access from Non-Bastion"
+    )
+| project 
+    StartTime, EndTime, SourceIP, MovementType, Severity,
+    ConnectionCount, DistinctTargetHosts,
+    TargetUsers, TargetHosts, AuthMethods
+| order by DistinctTargetHosts desc, ConnectionCount desc

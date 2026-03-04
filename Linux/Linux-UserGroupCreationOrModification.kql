@@ -1,0 +1,49 @@
+let LookbackPeriod = 1d;
+let AccountActions = dynamic(["useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "adduser", "deluser", "addgroup", "delgroup"]);
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has_any (AccountActions) 
+    or (SyslogMessage has "new user" or SyslogMessage has "new group" 
+        or SyslogMessage has "delete user" or SyslogMessage has "delete" and SyslogMessage has "group")
+| extend 
+    ActionType = case(
+        SyslogMessage has_any ("useradd", "adduser", "new user"), "UserCreated",
+        SyslogMessage has_any ("userdel", "deluser", "delete user", "removed user"), "UserDeleted",
+        SyslogMessage has "usermod", "UserModified",
+        SyslogMessage has_any ("groupadd", "addgroup", "new group"), "GroupCreated",
+        SyslogMessage has_any ("groupdel", "delgroup"), "GroupDeleted",
+        SyslogMessage has "groupmod", "GroupModified",
+        "Other"
+    ),
+    // Parse target account or group
+    TargetAccount = coalesce(
+        extract(@"new user: name=(\S+)", 1, SyslogMessage),
+        extract(@"delete user '(\S+)'", 1, SyslogMessage),
+        extract(@"new group: name=(\S+)", 1, SyslogMessage),
+        extract(@"'(\S+)' to group", 1, SyslogMessage),
+        extract(@"useradd\[\d+\]: new user: name=(\S+)", 1, SyslogMessage)
+    ),
+    PerformingUser = coalesce(
+        extract(@"by (\S+)", 1, SyslogMessage),
+        extract(@"sudo:\s+(\S+)", 1, SyslogMessage)
+    ),
+    UID = extract(@"UID=(\d+)", 1, SyslogMessage),
+    GID = extract(@"GID=(\d+)", 1, SyslogMessage),
+    HomeDirectory = extract(@"home=(\S+)", 1, SyslogMessage),
+    Shell = extract(@"shell=(\S+)", 1, SyslogMessage)
+| where ActionType != "Other"
+| extend 
+    Severity = case(
+        ActionType in ("UserCreated", "UserDeleted") and UID == "0", "High",  // UID 0 = root
+        ActionType in ("UserCreated", "UserDeleted"), "Medium",
+        ActionType == "UserModified", "Medium",
+        "Low"
+    ),
+    IsSuspiciousShell = Shell has_any ("/bin/bash", "/bin/sh", "/bin/zsh") and ActionType == "UserCreated"
+| project 
+    TimeGenerated, HostName, ActionType, Severity,
+    TargetAccount, PerformingUser,
+    UID, GID, HomeDirectory, Shell, IsSuspiciousShell,
+    SyslogMessage
+| order by TimeGenerated desc

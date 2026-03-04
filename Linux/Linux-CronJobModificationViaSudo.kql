@@ -1,0 +1,40 @@
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where (SyslogMessage has "sudo:" and SyslogMessage has "COMMAND=" 
+        and SyslogMessage has_any ("crontab", "/etc/cron", "/var/spool/cron", "at ", "atd", "anacron"))
+    or (SyslogMessage has "crontab" and SyslogMessage has_any ("REPLACE", "DELETE", "LIST", "EDIT"))
+| extend 
+    PerformingUser = coalesce(
+        extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+        extract(@"\((\S+)\) REPLACE", 1, SyslogMessage),
+        extract(@"\((\S+)\) DELETE", 1, SyslogMessage),
+        extract(@"\((\S+)\) LIST", 1, SyslogMessage)
+    ),
+    Command = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+    RunAsUser = extract(@"USER=(\S+)", 1, SyslogMessage),
+    EventType = case(
+        SyslogMessage has "REPLACE", "CronReplaced",
+        SyslogMessage has "DELETE", "CronDeleted",
+        SyslogMessage has "LIST", "CronListed",
+        SyslogMessage has "crontab -e", "CronEdited",
+        SyslogMessage has "/etc/cron", "SystemCronModified",
+        SyslogMessage has "at ", "AtJobScheduled",
+        "CronModified"
+    )
+| extend 
+    IsSystemCron = SyslogMessage has_any ("/etc/crontab", "/etc/cron.d", "/etc/cron.daily", "/etc/cron.hourly"),
+    TargetCronUser = coalesce(RunAsUser, extract(@"crontab.*-u\s+(\S+)", 1, SyslogMessage)),
+    Severity = case(
+        SyslogMessage has_any ("/etc/crontab", "/etc/cron.d"), "High",
+        EventType in ("CronReplaced", "SystemCronModified") and RunAsUser == "root", "High",
+        EventType in ("CronReplaced", "CronEdited"), "Medium",
+        EventType == "CronDeleted", "Medium",
+        "Low"
+    )
+| project 
+    TimeGenerated, HostName, EventType, Severity,
+    PerformingUser, TargetCronUser, Command,
+    IsSystemCron, SyslogMessage
+| order by Severity asc, TimeGenerated desc

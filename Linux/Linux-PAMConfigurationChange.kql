@@ -1,0 +1,38 @@
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where 
+    // PAM module messages
+    (SyslogMessage has "pam_" and SyslogMessage has_any ("added", "removed", "changed", "modified", "error", "unknown"))
+    // Direct PAM config file modifications via sudo
+    or (SyslogMessage has "sudo:" and SyslogMessage has "COMMAND=" 
+        and SyslogMessage has_any ("/etc/pam.d", "/etc/pam.conf", "pam_", "/lib/security", "/lib64/security"))
+    // PAM authentication failures indicating possible misconfiguration
+    or (SyslogMessage has "pam_" and SyslogMessage has_any ("auth could not identify password", "authentication token manipulation error", "module is unknown"))
+| extend 
+    PerformingUser = coalesce(
+        extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+        extract(@"by (\S+)", 1, SyslogMessage)
+    ),
+    Command = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+    PAMModule = extract(@"(pam_\w+)", 1, SyslogMessage),
+    EventType = case(
+        SyslogMessage has "sudo:" and SyslogMessage has_any ("/etc/pam.d", "/etc/pam.conf"), "PAMConfigModified",
+        SyslogMessage has "sudo:" and SyslogMessage has_any ("/lib/security", "/lib64/security"), "PAMModuleBinaryModified",
+        SyslogMessage has "module is unknown", "UnknownPAMModule",
+        SyslogMessage has "authentication token manipulation error", "PAMAuthTokenError",
+        "PAMEvent"
+    )
+| extend 
+    Severity = case(
+        EventType == "PAMModuleBinaryModified", "High",  // Modifying PAM binaries is very suspicious
+        EventType == "PAMConfigModified", "High",
+        EventType == "UnknownPAMModule", "High",         // Could indicate a malicious PAM module
+        "Medium"
+    )
+| project 
+    TimeGenerated, HostName, EventType, Severity,
+    PerformingUser, Command, PAMModule,
+    SyslogMessage
+| order by Severity asc, TimeGenerated desc

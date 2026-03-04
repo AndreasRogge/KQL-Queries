@@ -1,0 +1,56 @@
+let LookbackPeriod = 24h;
+let PrivilegedUsers = dynamic(["root", "admin", "dba", "oracle", "postgres"]);
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has_any ("sudo:", "su:", "Accepted", "session opened", "session closed")
+| extend 
+    EventCategory = case(
+        SyslogMessage has "sudo:" and SyslogMessage has "COMMAND=", "SudoExecution",
+        SyslogMessage has "sudo:" and SyslogMessage has "NOT in sudoers", "SudoDenied",
+        SyslogMessage has "sudo:" and SyslogMessage has "authentication failure", "SudoAuthFailure",
+        SyslogMessage has "su:" and SyslogMessage has "session opened", "SuSessionOpened",
+        SyslogMessage has "Accepted", "SSHLogin",
+        SyslogMessage has "session opened" and not(SyslogMessage has "su:"), "SessionOpened",
+        SyslogMessage has "session closed", "SessionClosed",
+        "Other"
+    ),
+    User = coalesce(
+        extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+        extract(@"Accepted \S+ for (\S+)", 1, SyslogMessage),
+        extract(@"session opened for user (\S+)", 1, SyslogMessage)
+    ),
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    Command = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+    RunAsUser = extract(@"USER=(\S+)", 1, SyslogMessage),
+    AuthMethod = extract(@"Accepted (\S+)", 1, SyslogMessage)
+| where EventCategory != "Other" and EventCategory != "SessionClosed"
+| extend 
+    IsPrivilegedUser = User in (PrivilegedUsers) or RunAsUser == "root",
+    ActionDetail = case(
+        EventCategory == "SudoExecution", strcat("Ran as ", RunAsUser, ": ", Command),
+        EventCategory == "SSHLogin", strcat(AuthMethod, " from ", SourceIP),
+        EventCategory == "SuSessionOpened", strcat("Switched to elevated session"),
+        EventCategory == "SudoDenied", "Sudo access denied",
+        EventCategory == "SudoAuthFailure", "Sudo authentication failed",
+        ""
+    )
+| summarize 
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    TotalPrivilegedActions = count(),
+    SudoExecutions = countif(EventCategory == "SudoExecution"),
+    SudoDenials = countif(EventCategory == "SudoDenied"),
+    SSHLogins = countif(EventCategory == "SSHLogin"),
+    SuSessions = countif(EventCategory == "SuSessionOpened"),
+    UniqueHosts = dcount(HostName),
+    Hosts = make_set(HostName, 50),
+    Actions = make_set(ActionDetail, 100),
+    SourceIPs = make_set(SourceIP, 25)
+    by User, IsPrivilegedUser
+| project 
+    StartTime, EndTime, User, IsPrivilegedUser,
+    TotalPrivilegedActions, SudoExecutions, SudoDenials,
+    SSHLogins, SuSessions, UniqueHosts,
+    Hosts, SourceIPs, Actions
+| order by TotalPrivilegedActions desc

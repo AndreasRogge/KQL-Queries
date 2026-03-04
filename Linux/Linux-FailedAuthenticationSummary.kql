@@ -1,0 +1,44 @@
+let LookbackPeriod = 24h;
+let ReportingBin = 1h;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has_any ("Failed password", "authentication failure", "FAILED", "invalid user", "Connection closed by authenticating user", "Unable to negotiate")
+| extend 
+    FailureType = case(
+        SyslogMessage has "Failed password for invalid user", "InvalidUser",
+        SyslogMessage has "Failed password", "WrongPassword",
+        SyslogMessage has "authentication failure", "AuthFailure",
+        SyslogMessage has "FAILED su", "SUFailure",
+        SyslogMessage has "NOT in sudoers", "SudoNotAuthorized",
+        SyslogMessage has "incorrect password" and SyslogMessage has "sudo", "SudoWrongPassword",
+        SyslogMessage has "Connection closed by authenticating user", "ConnectionAborted",
+        SyslogMessage has "Unable to negotiate", "ProtocolMismatch",
+        SyslogMessage has "maximum authentication attempts", "MaxAttemptsExceeded",
+        "OtherFailure"
+    ),
+    SourceIP = extract(@"from (\d+\.\d+\.\d+\.\d+)", 1, SyslogMessage),
+    TargetUser = coalesce(
+        extract(@"Failed password for invalid user (\S+)", 1, SyslogMessage),
+        extract(@"Failed password for (\S+)", 1, SyslogMessage),
+        extract(@"authentication failure.*user=(\S+)", 1, SyslogMessage),
+        extract(@"FAILED su for (\S+)", 1, SyslogMessage),
+        extract(@"sudo:\s+(\S+)", 1, SyslogMessage)
+    ),
+    Service = case(
+        SyslogMessage has "sshd", "SSH",
+        SyslogMessage has "su:", "SU",
+        SyslogMessage has "sudo:", "Sudo",
+        SyslogMessage has "login", "Console",
+        "Other"
+    )
+| summarize 
+    TotalFailures = count(),
+    DistinctSourceIPs = dcount(SourceIP),
+    DistinctTargetUsers = dcount(TargetUser),
+    DistinctHosts = dcount(HostName),
+    TopSourceIPs = make_set(SourceIP, 10),
+    TopTargetUsers = make_set(TargetUser, 10),
+    TopHosts = make_set(HostName, 10)
+    by FailureType, Service, bin(TimeGenerated, ReportingBin)
+| order by TimeGenerated desc, TotalFailures desc

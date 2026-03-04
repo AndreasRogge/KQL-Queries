@@ -1,0 +1,35 @@
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where SyslogMessage has_any ("authorized_keys", "AuthorizedKeysFile", "key added", "key removed")
+    or (SyslogMessage has "sudo:" and SyslogMessage has "COMMAND=" 
+        and SyslogMessage has_any ("authorized_keys", ".ssh/", "ssh-keygen", "ssh-copy-id"))
+| extend 
+    PerformingUser = coalesce(
+        extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+        extract(@"by (\S+)", 1, SyslogMessage),
+        extract(@"session opened for user (\S+)", 1, SyslogMessage)
+    ),
+    Command = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+    EventType = case(
+        SyslogMessage has "sudo:" and SyslogMessage has "authorized_keys", "SudoAuthorizedKeysModification",
+        SyslogMessage has "ssh-keygen", "SSHKeyGeneration",
+        SyslogMessage has "ssh-copy-id", "SSHKeyCopy",
+        SyslogMessage has "authorized_keys", "AuthorizedKeysAccess",
+        "Other"
+    ),
+    TargetPath = extract(@"(\/\S*authorized_keys\S*)", 1, SyslogMessage)
+| extend 
+    IsRootContext = SyslogMessage has "root" or (isnotempty(TargetPath) and TargetPath has "/root/"),
+    Severity = case(
+        EventType == "SudoAuthorizedKeysModification" and SyslogMessage has "/root/", "High",
+        EventType == "SudoAuthorizedKeysModification", "High",
+        EventType == "SSHKeyCopy", "Medium",
+        "Medium"
+    )
+| project 
+    TimeGenerated, HostName, EventType, Severity,
+    PerformingUser, Command, TargetPath, IsRootContext,
+    SyslogMessage
+| order by TimeGenerated desc

@@ -1,0 +1,53 @@
+let LookbackPeriod = 24h;
+// Capture session open events
+let SessionOpened = 
+    Syslog
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "session opened"
+    | extend 
+        User = extract(@"session opened for user (\S+)", 1, SyslogMessage),
+        SessionID = extract(@"pam_unix\((\S+):session\)", 1, SyslogMessage),
+        PID = extract(@"\[(\d+)\]", 1, SyslogMessage)
+    | where isnotempty(User)
+    | project SessionOpenTime = TimeGenerated, User, HostName, SessionID, PID, OpenMessage = SyslogMessage;
+// Capture session close events
+let SessionClosed = 
+    Syslog
+    | where TimeGenerated >= ago(LookbackPeriod)
+    | where Facility in ("auth", "authpriv")
+    | where SyslogMessage has "session closed"
+    | extend 
+        User = extract(@"session closed for user (\S+)", 1, SyslogMessage),
+        SessionID = extract(@"pam_unix\((\S+):session\)", 1, SyslogMessage),
+        PID = extract(@"\[(\d+)\]", 1, SyslogMessage)
+    | where isnotempty(User)
+    | project SessionCloseTime = TimeGenerated, User, HostName, SessionID, PID;
+// Join opens with closes
+SessionOpened
+| join kind=leftouter (SessionClosed) on User, HostName, SessionID, PID
+| extend 
+    SessionDurationMinutes = iff(isnotempty(SessionCloseTime), 
+        datetime_diff('minute', SessionCloseTime, SessionOpenTime), 
+        datetime_diff('minute', now(), SessionOpenTime)),
+    SessionStatus = iff(isnotempty(SessionCloseTime), "Closed", "Still Active"),
+    SessionType = case(
+        SessionID has "sshd", "SSH",
+        SessionID has "login", "Console",
+        SessionID has "su", "SU",
+        SessionID has "sudo", "Sudo",
+        SessionID has "cron", "Cron",
+        "Other"
+    )
+| extend 
+    IsLongSession = SessionDurationMinutes > 480,  // > 8 hours
+    Severity = case(
+        SessionStatus == "Still Active" and SessionDurationMinutes > 1440, "Medium",  // > 24h
+        SessionStatus == "Still Active" and SessionDurationMinutes > 480, "Low",
+        "Informational"
+    )
+| project 
+    SessionOpenTime, SessionCloseTime, SessionDurationMinutes,
+    User, HostName, SessionType, SessionStatus,
+    IsLongSession, Severity
+| order by SessionOpenTime desc

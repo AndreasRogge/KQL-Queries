@@ -1,0 +1,46 @@
+let LookbackPeriod = 1d;
+Syslog
+| where TimeGenerated >= ago(LookbackPeriod)
+| where Facility in ("auth", "authpriv")
+| where 
+    // Sudo commands touching sshd config
+    (SyslogMessage has "sudo:" and SyslogMessage has "COMMAND=" 
+        and SyslogMessage has_any ("sshd_config", "/etc/ssh/", "ssh_config"))
+    // SSHD reloading (may indicate config change)
+    or (SyslogMessage has "sshd" and SyslogMessage has_any ("Received SIGHUP", "reloading configuration", "Server listening"))
+    // SSHD configuration warnings or errors
+    or (ProcessName == "sshd" and SyslogMessage has_any ("Deprecated option", "Bad configuration", "unsupported option"))
+    // Systemctl restart of sshd via sudo
+    or (SyslogMessage has "sudo:" and SyslogMessage has "COMMAND=" 
+        and SyslogMessage has_any ("systemctl restart sshd", "systemctl reload sshd", "service sshd restart", "service ssh restart"))
+| extend 
+    PerformingUser = extract(@"sudo:\s+(\S+)", 1, SyslogMessage),
+    Command = extract(@"COMMAND=(.*)", 1, SyslogMessage),
+    EventType = case(
+        SyslogMessage has "sshd_config" and SyslogMessage has "sudo:", "SSHDConfigEdited",
+        SyslogMessage has_any ("systemctl", "service") and SyslogMessage has_any ("restart", "reload"), "SSHDRestarted",
+        SyslogMessage has_any ("Received SIGHUP", "reloading"), "SSHDReloaded",
+        SyslogMessage has "Server listening", "SSHDListeningChanged",
+        SyslogMessage has_any ("Deprecated", "Bad configuration", "unsupported"), "SSHDConfigWarning",
+        "SSHDConfigEvent"
+    )
+| extend 
+    Severity = case(
+        EventType == "SSHDConfigEdited", "High",
+        EventType == "SSHDRestarted", "Medium",
+        EventType == "SSHDReloaded", "Medium",
+        EventType == "SSHDListeningChanged", "Medium",
+        "Low"
+    ),
+    // Flag dangerous config changes
+    IsDangerousChange = Command has_any (
+        "PermitRootLogin", "PasswordAuthentication", "PermitEmptyPasswords",
+        "AuthorizedKeysFile", "UsePAM", "Port", "ListenAddress"
+    )
+| extend 
+    Severity = iff(IsDangerousChange, "High", Severity)
+| project 
+    TimeGenerated, HostName, EventType, Severity,
+    PerformingUser, Command, IsDangerousChange,
+    SyslogMessage
+| order by Severity asc, TimeGenerated desc
