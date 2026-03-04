@@ -1,8 +1,7 @@
 // Data Lake Query: General Check Point traffic analysis and statistics
-// Tier: Basic/Auxiliary Logs (retrospective analysis, no real-time alerting needed)
+// Tier: Sentinel Data Lake (retrospective analysis, no real-time alerting needed)
 // Description: Provides traffic overview for capacity planning, compliance reporting,
 //              and forensic investigation. Runs against low-cost data lake tier.
-// Note: Basic Logs support only simple queries (no join, no union with other tables).
 
 // Top talkers by source IP (last 24 hours)
 CommonSecurityLog

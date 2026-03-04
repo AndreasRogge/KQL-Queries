@@ -1,12 +1,11 @@
 // Data Tier Split Analysis: Measure Check Point data volumes per traffic category
-// Description: Helps you understand how much data belongs in each Sentinel tier.
+// Description: Helps you understand how much data belongs in Analytic tier vs Sentinel Data Lake.
 //              Run this BEFORE configuring your DCR transformation to validate the split.
 //              This query categorizes all Check Point firewall data and shows volume per category.
 
 // Step 1: Categorize and measure all Check Point traffic
 let AnalyticIngestionCostPerGb = 5.36;
-let BasicIngestionCostPerGb = 1.10;
-let AuxIngestionCostPerGb = 0.19;
+let DataLakeIngestionCostPerGb = 0.19;
 CommonSecurityLog
 | where TimeGenerated >= ago(30d)
 | where DeviceVendor == "Check Point" and DeviceProduct has "Firewall"
@@ -36,11 +35,11 @@ CommonSecurityLog
     ActionCategory == "Blocked" and Direction == "Inbound",                      "Analytic",
     ActionCategory == "Blocked" and Direction == "Outbound",                     "Analytic",
     ActionCategory == "Allowed" and Direction == "Outbound",                     "Analytic",
-    // BASIC/AUX TIER: High-volume operational data for retroactive investigation
-    ActionCategory == "Allowed" and Direction == "Internal",                     "BasicOrAux",
-    ActionCategory == "Blocked" and Direction == "Internal",                     "BasicOrAux",
-    ActionCategory == "Allowed" and Direction == "Inbound",                      "BasicOrAux",
-    "BasicOrAux"
+    // SENTINEL DATA LAKE: High-volume operational data for retroactive investigation
+    ActionCategory == "Allowed" and Direction == "Internal",                     "DataLake",
+    ActionCategory == "Blocked" and Direction == "Internal",                     "DataLake",
+    ActionCategory == "Allowed" and Direction == "Inbound",                      "DataLake",
+    "DataLake"
 )
 | summarize
     EventCount = count(),
@@ -48,8 +47,7 @@ CommonSecurityLog
     by Direction, ActionCategory, SeverityCategory, RecommendedTier
 | extend
     AnalyticCostPerMonth = round(DataSizeGB * AnalyticIngestionCostPerGb, 2),
-    BasicCostPerMonth = round(DataSizeGB * BasicIngestionCostPerGb, 2),
-    AuxCostPerMonth = round(DataSizeGB * AuxIngestionCostPerGb, 2)
+    DataLakeCostPerMonth = round(DataSizeGB * DataLakeIngestionCostPerGb, 2)
 | order by RecommendedTier asc, DataSizeGB desc
 
 
@@ -76,7 +74,7 @@ CommonSecurityLog
     IsVPN or IsMgmt,                                                                "Analytic",
     ActionCategory == "Blocked",                                                    "Analytic",
     ActionCategory == "Allowed" and Direction == "Outbound",                        "Analytic",
-    "BasicOrAux"
+    "DataLake"
 )
 | summarize
     EventCount = count(),

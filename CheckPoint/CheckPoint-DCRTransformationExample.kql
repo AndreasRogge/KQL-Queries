@@ -1,4 +1,4 @@
-// DCR Transformation: Split Check Point data between Analytic and Basic/Auxiliary tiers
+// DCR Transformation: Split Check Point data between Analytic tier and Sentinel Data Lake
 // Description: Use these KQL transformations in a Data Collection Rule (DCR) to route
 //              Check Point firewall data to the appropriate Sentinel log tier.
 //
@@ -15,29 +15,25 @@
 //   5. Management/policy change events                     --> Audit trail, defense evasion
 //   6. IPS/IDS/Threat Prevention blade events              --> Active threat detection
 //
-// BASIC LOGS TIER (limited KQL, no real-time alerting, lower cost ~$1.10/GB)
-// Send this data to the Basic Logs tier:
+// SENTINEL DATA LAKE (limited KQL, no real-time alerting, lower cost ~$0.19/GB)
+// Send this data to the Data Lake:
 //   7. Inbound allowed traffic (external->internal)        --> Forensic investigation
 //   8. DNS allowed queries (high volume)                   --> Retroactive TI matching
-//
-// AUXILIARY LOGS TIER (minimal KQL, cheapest, long retention ~$0.19/GB)
-// Send this data to the Auxiliary tier:
 //   9. Internal-to-internal allowed traffic                --> Compliance retention
 //  10. Routine accept logs for known-good traffic          --> Capacity planning
 //
 // ============================================================================
 // TYPICAL VOLUME SPLIT (varies by environment):
-//   Analytic:  ~20-35% of total Check Point data
-//   Basic:     ~10-20% of total Check Point data
-//   Auxiliary:  ~50-70% of total Check Point data
+//   Analytic:   ~20-35% of total Check Point data
+//   Data Lake:  ~65-80% of total Check Point data
 // ============================================================================
 //
 // WHY THIS SPLIT?
 // - Internal allowed traffic is 60-80% of volume but has the LOWEST security value
 // - Blocked traffic + outbound traffic is 20-35% but drives ALL detection rules
-// - Moving internal allowed traffic to Auxiliary saves 60-80% of ingestion cost
+// - Moving internal allowed traffic to the Data Lake saves 60-80% of ingestion cost
 // - You keep full detection capability on the Analytic tier
-// - Basic/Aux data is still searchable for forensics (with query limitations)
+// - Data Lake data is still searchable for forensics (with query limitations)
 //
 // ============================================================================
 // ANALYTIC RULE USE CASES (require Analytic tier data):
@@ -80,28 +76,20 @@ source
     or DeviceEventClassID has_any ("ips", "threat", "anti_bot", "anti_virus")
 
 
-// DCR Transformation for BASIC LOGS tier (CommonSecurityLog_BasicLogs table)
-// Inbound allowed traffic and DNS queries
+// DCR Transformation for SENTINEL DATA LAKE
+// Everything NOT routed to Analytic: inbound allowed, DNS, internal traffic
 source
 | where DeviceVendor == "Check Point"
 | where DeviceAction == "Accept"
 | where
+    // Internal-to-internal allowed traffic (highest volume)
+    (ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == true)
     // Inbound allowed traffic
-    (ipv4_is_private(SourceIP) == false and ipv4_is_private(DestinationIP) == true)
+    or (ipv4_is_private(SourceIP) == false and ipv4_is_private(DestinationIP) == true)
     // DNS queries
     or Activity has "dns"
     or DestinationPort == 53
 // Exclude events already captured in Analytic tier
 | where not(LogSeverity in (8, 9, 10))
-| where not(Activity has_any ("VPN", "Remote Access", "IPS", "Threat Prevention"))
-
-
-// DCR Transformation for AUXILIARY LOGS tier (long-term retention, lowest cost)
-// Everything else: internal-to-internal allowed traffic
-source
-| where DeviceVendor == "Check Point"
-| where DeviceAction == "Accept"
-| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == true
-// Exclude VPN/mgmt events (those go to Analytic)
-| where not(Activity has_any ("VPN", "Remote Access", "Policy Install", "Admin"))
-| where not(LogSeverity in (8, 9, 10))
+| where not(Activity has_any ("VPN", "Remote Access", "IPS", "Threat Prevention",
+                               "Policy Install", "Admin"))

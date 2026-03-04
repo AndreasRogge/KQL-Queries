@@ -71,7 +71,7 @@ KQL-Queries/
 | [CheckPoint-BruteForceDetection.kql](CheckPoint/CheckPoint-BruteForceDetection.kql) | Detect brute force attempts against services on authentication ports |
 | [CheckPoint-CriticalSeverityEvents.kql](CheckPoint/CheckPoint-CriticalSeverityEvents.kql) | Alert on high and critical severity firewall events with direction enrichment |
 | [CheckPoint-DataExfiltration.kql](CheckPoint/CheckPoint-DataExfiltration.kql) | Detect potential data exfiltration via anomalous outbound data volumes |
-| [CheckPoint-DCRTransformationExample.kql](CheckPoint/CheckPoint-DCRTransformationExample.kql) | DCR transformation templates to split data between Analytic, Basic, and Auxiliary tiers |
+| [CheckPoint-DCRTransformationExample.kql](CheckPoint/CheckPoint-DCRTransformationExample.kql) | DCR transformation templates to split data between Analytic tier and Sentinel Data Lake |
 | [CheckPoint-InternalAllowedTraffic.kql](CheckPoint/CheckPoint-InternalAllowedTraffic.kql) | Internal allowed traffic analysis for data lake tier (high volume, low security value) |
 | [CheckPoint-PolicyChangeDetection.kql](CheckPoint/CheckPoint-PolicyChangeDetection.kql) | Detect firewall policy installs, rule changes, and admin login events |
 | [CheckPoint-PortScanDetection.kql](CheckPoint/CheckPoint-PortScanDetection.kql) | Detect vertical and horizontal port scanning activity |

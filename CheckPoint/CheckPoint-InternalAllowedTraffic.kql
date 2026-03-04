@@ -1,5 +1,5 @@
 // Data Lake Query: Internal allowed traffic analysis (highest volume, lowest security value)
-// Tier: Basic/Auxiliary Logs (this is typically 60-80% of all firewall data)
+// Tier: Sentinel Data Lake (this is typically 60-80% of all firewall data)
 // Description: Internal-to-internal allowed traffic is the largest data category.
 //              Kept in data lake for compliance retention and forensic investigation.
 //              NOT needed for real-time analytic rules.
