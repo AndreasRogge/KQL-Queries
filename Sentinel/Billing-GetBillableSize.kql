@@ -29,9 +29,7 @@ let IngestionCostPerGb = 5.17;
 // | distinct DataType, Solution
 let AnalyticIngestionCostPerGb = 5.36;
 
-let BasicIngestionCostPerGb = 1.10;
-
-let AuxIngestionCostPerGb = 0.19;
+let DataLakeIngestionCostPerGb = 0.19;
 CommonSecurityLog
 | where TimeGenerated >= ago(30d)
 | extend policyName = tostring(extract("profile = (\\w+)[-]?(\\w+)", 0, AdditionalExtensions))
@@ -48,9 +46,8 @@ CommonSecurityLog
 
 // | extend CostPerDay = AvgDataPerHourInGB*24*AnalyticIngestionCostPerGb
 | extend AnalyticCostPerMonth = round(AvgDataPerHourInGB*24*AnalyticIngestionCostPerGb*30, 2)
-| extend BasicCostPerMonth = round(AvgDataPerHourInGB*24*BasicIngestionCostPerGb*30, 2)
-| extend AuxCostPerMonth = round(AvgDataPerHourInGB*24*AuxIngestionCostPerGb*30, 2)
-| project-reorder AnalyticCostPerMonth, BasicCostPerMonth, AuxCostPerMonth, AvgDataPerHourInGB
+| extend DataLakeCostPerMonth = round(AvgDataPerHourInGB*24*DataLakeIngestionCostPerGb*30, 2)
+| project-reorder AnalyticCostPerMonth, DataLakeCostPerMonth, AvgDataPerHourInGB
 
 // where policyID == 111
 // | summarize count() by Activity, DeviceAction

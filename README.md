@@ -44,7 +44,7 @@ KQL-Queries/
 |------|-------------|
 | [Billing-BillableDataCap.kql](Sentinel/Billing-BillableDataCap.kql) | Visualize daily billable data ingestion by data type over the last 31 days |
 | [Billing-EPSPerTable.kql](Sentinel/Billing-EPSPerTable.kql) | Calculate events per second (EPS) for CommonSecurityLog with timechart |
-| [Billing-GetBillableSize.kql](Sentinel/Billing-GetBillableSize.kql) | Comprehensive cost analysis comparing Analytic, Basic, and Auxiliary log tiers |
+| [Billing-GetBillableSize.kql](Sentinel/Billing-GetBillableSize.kql) | Comprehensive cost analysis comparing Analytic tier and Sentinel Data Lake |
 | [Entra-BreakGlassUserSignInActivity.kql](Sentinel/Entra-BreakGlassUserSignInActivity.kql) | Monitor break glass account activity across SigninLogs and OfficeActivity using a watchlist |
 | [Entra-DistinctUserPerMonth.kql](Sentinel/Entra-DistinctUserPerMonth.kql) | Count distinct users per month per tenant from sign-in logs |
 | [Entra-FailedSignInsWithCAP.kql](Sentinel/Entra-FailedSignInsWithCAP.kql) | Analyze failed sign-ins with conditional access policy details and failure reasons |
