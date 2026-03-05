@@ -72,7 +72,38 @@ KQL-Queries/
 
 | File | Description |
 |------|-------------|
-| [DataTierCostAnalysis.json](Sentinel/Workbooks/DataTierCostAnalysis.json) | Importable Sentinel Workbook: visual cost comparison between Analytic and Data Lake tiers with trend charts, savings tiles, and per-table breakdown |
+| [DataTierCostAnalysis.json](Sentinel/Workbooks/DataTierCostAnalysis.json) | Importable Sentinel Workbook for three-tier cost optimization (see details below) |
+| [SentinelCostOptimization-CustomerReport.md](Sentinel/Workbooks/SentinelCostOptimization-CustomerReport.md) | Example customer-facing report template with cost breakdown and implementation steps |
+
+##### Sentinel Data Tier Cost Analysis Workbook
+
+An interactive Azure Workbook that models Microsoft Sentinel costs across three data tiers — **Analytic**, **Data Lake only**, and **Defender XDR only** — to identify optimal table placement and quantify savings.
+
+**Key features:**
+- **Configurable pricing parameters** — Analytic ingestion, Data Lake ingestion, Data Lake storage (per compressed GB/month), currency
+- **Analytic Tier Total Retention** — models the cost of extending Analytic tables beyond 90 days into Data Lake long-term retention (storage cost only, no extra ingestion charge)
+- **Data Lake Only Retention** — configurable retention period for Data Lake only tables (1 month to 10 years)
+- **Multi-select table assignment** — assign tables to Analytic or Data Lake tier; unselected tables default to Defender XDR only (free)
+- **Summary tiles** — total daily ingestion, current vs optimized monthly cost, savings percentage
+- **Cost breakdown bar chart** — side-by-side comparison: current (all Analytic) vs Analytic ingestion, Analytic long-term storage, Data Lake ingestion, Data Lake storage, XDR
+- **Data volume pie chart** — visual split of GB/day across tiers
+- **Data Lake detail grid** — per-table ingestion, compressed storage, and total cost for all Data Lake tables
+- **Per-table cost grid** — every billable table with assigned tier, current cost, optimized cost, and savings percentage
+- **Top 15 savings bar chart** — tables with the largest monthly savings potential
+- **Ingestion trends** — total daily billable ingestion (area chart) and daily ingestion by tier (stacked bar)
+- **Daily cost trend** — current vs optimized cost lines with daily savings overlay
+
+**How to import:** Navigate to Microsoft Sentinel > Workbooks > Add workbook > Advanced Editor, paste the JSON, and click Apply.
+
+**Billing model implemented:**
+
+| Configuration | Ingestion | Interactive Retention | Long-Term Retention |
+|---------------|-----------|----------------------|---------------------|
+| Analytic | Full price/GB | 90 days included | Data Lake storage rate only (no extra ingestion) |
+| Data Lake only | Low price/GB | N/A | Data Lake storage rate |
+| Defender XDR only | Free | 30 days in Defender | N/A |
+
+Storage uses a **6:1 compression ratio** as documented by Microsoft (600 GB raw = 100 GB billed).
 
 ### Check Point Firewall
 
