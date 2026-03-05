@@ -1,0 +1,104 @@
+// Sentinel Data Tier Cost Comparison: Analytic Tier vs Data Lake across ALL tables
+// Description: Automatically pulls ingestion data from the Usage table (no manual entry needed).
+//              Shows per-table cost comparison between keeping everything in Analytics tier
+//              versus moving eligible tables to the Data Lake tier.
+//              Helps you identify which tables offer the biggest savings potential.
+//
+// Pricing (adjust to your region/commitment tier):
+let AnalyticIngestionCostPerGb = 5.36;
+let DataLakeIngestionCostPerGb = 0.19;
+// Tables that MUST stay in the Analytic tier for real-time detections
+// Adjust this list based on your active analytics rules and detection needs
+let AnalyticTierTables = dynamic([
+    "SecurityAlert",
+    "SecurityIncident",
+    "SigninLogs",
+    "AADNonInteractiveUserSignInLogs",
+    "AuditLogs",
+    "OfficeActivity",
+    "ThreatIntelligenceIndicator",
+    "SecurityEvent",
+    "DeviceEvents",
+    "DeviceProcessEvents",
+    "DeviceNetworkEvents",
+    "DeviceFileEvents",
+    "DeviceLogonEvents",
+    "DeviceRegistryEvents",
+    "EmailEvents",
+    "EmailAttachmentInfo",
+    "IdentityLogonEvents",
+    "IdentityQueryEvents",
+    "AlertEvidence",
+    "AlertInfo"
+]);
+Usage
+| where TimeGenerated > ago(32d)
+| where StartTime >= startofday(ago(31d)) and EndTime < startofday(now())
+| where IsBillable == true
+| summarize
+    DailyAvgGB = round(sum(Quantity) / 1000.0 / 31, 3)
+    by DataType
+| extend RecommendedTier = iff(DataType in (AnalyticTierTables), "Analytic", "DataLake")
+| extend
+    CurrentMonthlyCostAnalytic = round(DailyAvgGB * 30 * AnalyticIngestionCostPerGb, 2),
+    OptimizedMonthlyCost = round(
+        DailyAvgGB * 30 * iff(RecommendedTier == "Analytic", AnalyticIngestionCostPerGb, DataLakeIngestionCostPerGb), 2)
+| extend
+    MonthlySavings = round(CurrentMonthlyCostAnalytic - OptimizedMonthlyCost, 2),
+    SavingsPercent = round((CurrentMonthlyCostAnalytic - OptimizedMonthlyCost) / CurrentMonthlyCostAnalytic * 100, 1)
+| project
+    DataType,
+    DailyAvgGB,
+    RecommendedTier,
+    CurrentMonthlyCostAnalytic,
+    OptimizedMonthlyCost,
+    MonthlySavings,
+    SavingsPercent
+| order by MonthlySavings desc
+
+
+// Step 2: Summary totals - overall savings potential
+let AnalyticIngestionCostPerGb = 5.36;
+let DataLakeIngestionCostPerGb = 0.19;
+let AnalyticTierTables = dynamic([
+    "SecurityAlert",
+    "SecurityIncident",
+    "SigninLogs",
+    "AADNonInteractiveUserSignInLogs",
+    "AuditLogs",
+    "OfficeActivity",
+    "ThreatIntelligenceIndicator",
+    "SecurityEvent",
+    "DeviceEvents",
+    "DeviceProcessEvents",
+    "DeviceNetworkEvents",
+    "DeviceFileEvents",
+    "DeviceLogonEvents",
+    "DeviceRegistryEvents",
+    "EmailEvents",
+    "EmailAttachmentInfo",
+    "IdentityLogonEvents",
+    "IdentityQueryEvents",
+    "AlertEvidence",
+    "AlertInfo"
+]);
+Usage
+| where TimeGenerated > ago(32d)
+| where StartTime >= startofday(ago(31d)) and EndTime < startofday(now())
+| where IsBillable == true
+| summarize DailyAvgGB = sum(Quantity) / 1000.0 / 31 by DataType
+| extend RecommendedTier = iff(DataType in (AnalyticTierTables), "Analytic", "DataLake")
+| summarize
+    TotalDailyGB = round(sum(DailyAvgGB), 2),
+    AnalyticTierDailyGB = round(sumif(DailyAvgGB, RecommendedTier == "Analytic"), 2),
+    DataLakeTierDailyGB = round(sumif(DailyAvgGB, RecommendedTier == "DataLake"), 2),
+    TableCountAnalytic = countif(RecommendedTier == "Analytic"),
+    TableCountDataLake = countif(RecommendedTier == "DataLake")
+| extend
+    CurrentMonthlyCostAllAnalytic = round(TotalDailyGB * 30 * AnalyticIngestionCostPerGb, 2),
+    OptimizedMonthlyCost = round(
+        (AnalyticTierDailyGB * 30 * AnalyticIngestionCostPerGb) +
+        (DataLakeTierDailyGB * 30 * DataLakeIngestionCostPerGb), 2)
+| extend
+    TotalMonthlySavings = round(CurrentMonthlyCostAllAnalytic - OptimizedMonthlyCost, 2),
+    SavingsPercent = round((CurrentMonthlyCostAllAnalytic - OptimizedMonthlyCost) / CurrentMonthlyCostAllAnalytic * 100, 1)

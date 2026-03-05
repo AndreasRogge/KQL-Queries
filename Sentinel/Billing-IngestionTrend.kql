@@ -1,0 +1,38 @@
+// Ingestion Trend: Daily volume and cost over the last 90 days per table
+// Description: Shows how data volumes develop over time per table.
+//              Helps identify growth trends, spikes, and seasonal patterns
+//              to forecast future costs and validate tier split decisions.
+
+// Step 1: Daily ingestion trend per table (top 10 by volume)
+let AnalyticIngestionCostPerGb = 5.36;
+Usage
+| where TimeGenerated > ago(92d)
+| where StartTime >= startofday(ago(90d)) and EndTime < startofday(now())
+| where IsBillable == true
+| summarize DailyGB = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d), DataType
+| order by StartTime asc, DailyGB desc
+| render columnchart with (title="Daily Billable Ingestion by Table (GB)")
+
+
+// Step 2: Total daily ingestion with cost overlay
+let AnalyticIngestionCostPerGb = 5.36;
+Usage
+| where TimeGenerated > ago(92d)
+| where StartTime >= startofday(ago(90d)) and EndTime < startofday(now())
+| where IsBillable == true
+| summarize DailyGB = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d)
+| extend DailyCostAnalytic = round(DailyGB * AnalyticIngestionCostPerGb, 2)
+| render timechart with (title="Total Daily Ingestion (GB) and Estimated Analytic Cost")
+
+
+// Step 3: 30-day rolling average per table to smooth out spikes
+Usage
+| where TimeGenerated > ago(92d)
+| where StartTime >= startofday(ago(90d)) and EndTime < startofday(now())
+| where IsBillable == true
+| summarize DailyGB = sum(Quantity) / 1000.0 by bin(StartTime, 1d), DataType
+| order by DataType asc, StartTime asc
+| serialize
+| extend RollingAvgGB = round(row_window_session(DailyGB, StartTime, 30d, 30d), 3)
+| project StartTime, DataType, DailyGB = round(DailyGB, 3)
+| render timechart with (title="Daily Ingestion per Table (GB)")

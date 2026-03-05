@@ -1,0 +1,40 @@
+// Per-Table Ingestion Detail: Volume, EPS, and cost breakdown using _BilledSize
+// Description: Queries actual table data (not the Usage table) to get precise per-table
+//              billing metrics including event count, data size, EPS, and cost projections.
+//              Use this for tables where you need granular visibility beyond what Usage provides.
+//
+// Note: This query uses union with a wildcard to scan all tables. It may take a moment to run.
+//       For large workspaces, consider filtering to specific tables or reducing the time range.
+//
+// Pricing (adjust to your region/commitment tier):
+let AnalyticIngestionCostPerGb = 5.36;
+let DataLakeIngestionCostPerGb = 0.19;
+let LookbackDays = 30;
+union withsource=TableName *
+| where TimeGenerated >= ago(LookbackDays * 1d)
+| where _IsBillable == true
+| summarize
+    EventCount = count(),
+    TotalSizeBytes = sum(_BilledSize)
+    by TableName
+| extend
+    TotalSizeGB = round(TotalSizeBytes / 1000.0 / 1000.0 / 1000.0, 3),
+    DailyAvgGB = round(TotalSizeBytes / 1000.0 / 1000.0 / 1000.0 / LookbackDays, 3),
+    AvgEventSizeBytes = round(TotalSizeBytes * 1.0 / EventCount, 0),
+    EPS = round(EventCount * 1.0 / (LookbackDays * 86400), 1)
+| extend
+    AnalyticMonthlyCost = round(DailyAvgGB * 30 * AnalyticIngestionCostPerGb, 2),
+    DataLakeMonthlyCost = round(DailyAvgGB * 30 * DataLakeIngestionCostPerGb, 2)
+| extend
+    PotentialSavings = round(AnalyticMonthlyCost - DataLakeMonthlyCost, 2)
+| project
+    TableName,
+    EventCount,
+    TotalSizeGB,
+    DailyAvgGB,
+    AvgEventSizeBytes,
+    EPS,
+    AnalyticMonthlyCost,
+    DataLakeMonthlyCost,
+    PotentialSavings
+| order by TotalSizeGB desc

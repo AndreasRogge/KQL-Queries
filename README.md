@@ -25,14 +25,14 @@ KQL-Queries/
 
 | Folder | Description | Queries |
 |--------|-------------|:-------:|
-| [Sentinel](#sentinel) | Billing, Entra ID, ingestion monitoring, incident management, syslog, FortiNet | 20 |
+| [Sentinel](#sentinel) | Billing, Entra ID, ingestion monitoring, incident management, syslog, FortiNet | 23 |
 | [CheckPoint](#check-point-firewall) | Check Point Firewall analytic rules, data tier splitting, DCR transformations | 12 |
 | [Hunting](#hunting) | Threat hunting across MDE, Sentinel, and cloud services | 5 |
 | [MDE](#microsoft-defender-for-endpoint) | Defender for Endpoint detections | 1 |
 | [MDI](#microsoft-defender-for-identity) | Failed logon and account lockout anomaly detection | 3 |
 | [Intune](#intune) | Enrollment, compliance, policy changes, audit operations | 10 |
 | [GCP](#google-cloud-platform) | GCP audit log threat detections and anomaly analysis | 17 |
-| **Total** | | **68** |
+| **Total** | | **71** |
 
 ---
 
@@ -45,6 +45,9 @@ KQL-Queries/
 | [Billing-BillableDataCap.kql](Sentinel/Billing-BillableDataCap.kql) | Visualize daily billable data ingestion by data type over the last 31 days |
 | [Billing-EPSPerTable.kql](Sentinel/Billing-EPSPerTable.kql) | Calculate events per second (EPS) for CommonSecurityLog with timechart |
 | [Billing-GetBillableSize.kql](Sentinel/Billing-GetBillableSize.kql) | Comprehensive cost analysis comparing Analytic tier and Sentinel Data Lake |
+| [Billing-IngestionByTableDetail.kql](Sentinel/Billing-IngestionByTableDetail.kql) | Per-table ingestion detail with event count, EPS, data size, and tier cost comparison |
+| [Billing-IngestionTrend.kql](Sentinel/Billing-IngestionTrend.kql) | Daily ingestion volume and cost trends over 90 days per table with charts |
+| [Billing-TierCostComparison.kql](Sentinel/Billing-TierCostComparison.kql) | Automated tier cost comparison across all tables with Data Lake savings potential |
 | [Entra-BreakGlassUserSignInActivity.kql](Sentinel/Entra-BreakGlassUserSignInActivity.kql) | Monitor break glass account activity across SigninLogs and OfficeActivity using a watchlist |
 | [Entra-DistinctUserPerMonth.kql](Sentinel/Entra-DistinctUserPerMonth.kql) | Count distinct users per month per tenant from sign-in logs |
 | [Entra-FailedSignInsWithCAP.kql](Sentinel/Entra-FailedSignInsWithCAP.kql) | Analyze failed sign-ins with conditional access policy details and failure reasons |
