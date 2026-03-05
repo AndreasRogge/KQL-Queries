@@ -10,6 +10,8 @@ Built for SOC analysts, security engineers, and IT administrators to accelerate 
 
 ```
 KQL-Queries/
+  Sentinel/
+    Workbooks/  Sentinel Workbook templates (importable JSON)
   Sentinel/     Microsoft Sentinel, Entra ID, Syslog, FortiNet, Ingestion
   CheckPoint/   Check Point Firewall analytic rules, tier splitting, DCR examples
   Hunting/      Cross-product threat hunting queries
@@ -65,6 +67,12 @@ KQL-Queries/
 | [Syslog-ServerBelowThreshold.kql](Sentinel/Syslog-ServerBelowThreshold.kql) | Alert when syslog servers drop below a percentage of their average event volume |
 | [Teams-ExternalChatWithPersonalTenant.kql](Sentinel/Teams-ExternalChatWithPersonalTenant.kql) | Detect one-on-one Teams chats with personal (consumer) tenants |
 | [WindowsEvents-ParseEventID4738.kql](Sentinel/WindowsEvents-ParseEventID4738.kql) | Parse Event ID 4738 (user account changes) with full UserAccountControl flag decoding |
+
+#### Workbooks
+
+| File | Description |
+|------|-------------|
+| [DataTierCostAnalysis.json](Sentinel/Workbooks/DataTierCostAnalysis.json) | Importable Sentinel Workbook: visual cost comparison between Analytic and Data Lake tiers with trend charts, savings tiles, and per-table breakdown |
 
 ### Check Point Firewall
 

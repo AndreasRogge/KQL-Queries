@@ -1,0 +1,324 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Sentinel Data Tier Cost Analysis\n\nThis workbook automatically analyzes your ingestion volumes and compares costs between the **Analytics tier** and the **Data Lake tier**.\n\nAll data is pulled automatically from the built-in `Usage` table -- no manual input required.\n\n---"
+      },
+      "name": "header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timerange",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 2592000000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 604800000 },
+                { "durationMs": 1209600000 },
+                { "durationMs": 2592000000 },
+                { "durationMs": 7776000000 }
+              ]
+            },
+            "label": "Time Range"
+          },
+          {
+            "id": "analyticCost",
+            "version": "KqlParameterItem/1.0",
+            "name": "AnalyticCostPerGB",
+            "type": 1,
+            "isRequired": true,
+            "value": "5.36",
+            "label": "Analytic Tier Cost per GB (EUR)"
+          },
+          {
+            "id": "datalakeCost",
+            "version": "KqlParameterItem/1.0",
+            "name": "DataLakeCostPerGB",
+            "type": 1,
+            "isRequired": true,
+            "value": "0.19",
+            "label": "Data Lake Tier Cost per GB (EUR)"
+          },
+          {
+            "id": "analyticTables",
+            "version": "KqlParameterItem/1.0",
+            "name": "AnalyticTierTables",
+            "type": 1,
+            "isRequired": true,
+            "value": "SecurityAlert,SecurityIncident,SigninLogs,AADNonInteractiveUserSignInLogs,AuditLogs,OfficeActivity,ThreatIntelligenceIndicator,SecurityEvent,DeviceEvents,DeviceProcessEvents,DeviceNetworkEvents,DeviceFileEvents,DeviceLogonEvents,DeviceRegistryEvents,EmailEvents,EmailAttachmentInfo,IdentityLogonEvents,IdentityQueryEvents,AlertEvidence,AlertInfo",
+            "label": "Tables to keep in Analytic Tier (comma-separated)"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Overview: Total Savings Potential"
+      },
+      "name": "section-overview"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = split('{AnalyticTierTables}', ',');\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    TotalDailyGB = round(sum(DailyAvgGB), 2),\n    AnalyticDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"Analytic\"), 2),\n    DataLakeDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"DataLake\"), 2)\n| extend\n    CurrentMonthlyCost = round(TotalDailyGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round((AnalyticDailyGB * 30 * AnalyticCost) + (DataLakeDailyGB * 30 * DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    ['Total Daily Ingestion (GB)'] = TotalDailyGB,\n    ['Analytic Tier (GB/day)'] = AnalyticDailyGB,\n    ['Data Lake Tier (GB/day)'] = DataLakeDailyGB,\n    ['Current Monthly Cost'] = CurrentMonthlyCost,\n    ['Optimized Monthly Cost'] = OptimizedMonthlyCost,\n    ['Monthly Savings'] = MonthlySavings,\n    ['Savings %'] = SavingsPercent",
+        "size": 4,
+        "title": "Summary: Current vs Optimized Cost",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "Monthly Savings",
+            "formatter": 1
+          },
+          "showBorder": true
+        }
+      },
+      "name": "summary-tiles"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = split('{AnalyticTierTables}', ',');\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    CurrentCost = round(sum(DailyAvgGB) * 30 * AnalyticCost, 2),\n    OptimizedCost = round(\n        (sumif(DailyAvgGB, RecommendedTier == \"Analytic\") * 30 * AnalyticCost) +\n        (sumif(DailyAvgGB, RecommendedTier == \"DataLake\") * 30 * DataLakeCost), 2)\n| project\n    CostType = pack_array('Current (All Analytic)', 'Optimized (Tier Split)'),\n    Cost = pack_array(CurrentCost, OptimizedCost)\n| mv-expand CostType to typeof(string), Cost to typeof(real)",
+        "size": 1,
+        "title": "Monthly Cost Comparison: Current vs Optimized",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart",
+        "chartSettings": {
+          "xAxis": "CostType",
+          "yAxis": ["Cost"],
+          "seriesLabelSettings": [
+            {
+              "seriesName": "Cost",
+              "label": "Monthly Cost (EUR)"
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "cost-comparison-bar"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = split('{AnalyticTierTables}', ',');\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize DailyGB = round(sum(DailyAvgGB), 2) by RecommendedTier\n| extend MonthlyGB = round(DailyGB * 30, 1)",
+        "size": 1,
+        "title": "Data Volume Split: Analytic vs Data Lake",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "piechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            {
+              "seriesName": "Analytic",
+              "label": "Analytic Tier"
+            },
+            {
+              "seriesName": "DataLake",
+              "label": "Data Lake Tier"
+            }
+          ]
+        }
+      },
+      "customWidth": "50",
+      "name": "volume-split-pie"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "---\n## Per-Table Cost Breakdown"
+      },
+      "name": "section-per-table"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = split('{AnalyticTierTables}', ',');\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend\n    DailyAvgGB = round(TotalMB / 1000.0 / Days, 3),\n    RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| extend\n    CurrentMonthlyCost = round(DailyAvgGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round(DailyAvgGB * 30 * iff(RecommendedTier == \"Analytic\", AnalyticCost, DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    DataType,\n    DailyAvgGB,\n    RecommendedTier,\n    CurrentMonthlyCost,\n    OptimizedMonthlyCost,\n    MonthlySavings,\n    SavingsPercent\n| order by MonthlySavings desc",
+        "size": 0,
+        "title": "Per-Table: Tier Recommendation and Savings",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "RecommendedTier",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "icons",
+                "thresholdsGrid": [
+                  {
+                    "operator": "==",
+                    "thresholdValue": "Analytic",
+                    "representation": "success",
+                    "text": "Analytic"
+                  },
+                  {
+                    "operator": "==",
+                    "thresholdValue": "DataLake",
+                    "representation": "2",
+                    "text": "Data Lake"
+                  },
+                  {
+                    "operator": "Default",
+                    "representation": "unknown",
+                    "text": "{0}"
+                  }
+                ]
+              }
+            },
+            {
+              "columnMatch": "MonthlySavings",
+              "formatter": 8,
+              "formatOptions": {
+                "palette": "green"
+              }
+            },
+            {
+              "columnMatch": "SavingsPercent",
+              "formatter": 8,
+              "formatOptions": {
+                "palette": "green"
+              }
+            }
+          ],
+          "sortBy": [
+            {
+              "itemKey": "MonthlySavings",
+              "sortOrder": 2
+            }
+          ]
+        }
+      },
+      "name": "per-table-grid"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = split('{AnalyticTierTables}', ',');\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| where RecommendedTier == \"DataLake\"\n| extend Savings = round(DailyAvgGB * 30 * (AnalyticCost - DataLakeCost), 2)\n| top 15 by Savings desc\n| project DataType, Savings",
+        "size": 1,
+        "title": "Top 15 Tables: Monthly Savings if Moved to Data Lake",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart",
+        "chartSettings": {
+          "xAxis": "DataType",
+          "yAxis": ["Savings"],
+          "seriesLabelSettings": [
+            {
+              "seriesName": "Savings",
+              "label": "Monthly Savings (EUR)",
+              "color": "green"
+            }
+          ]
+        }
+      },
+      "name": "top-savings-bar"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "---\n## Ingestion Trends"
+      },
+      "name": "section-trends"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "Usage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize DailyGB = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d)\n| order by StartTime asc",
+        "size": 0,
+        "title": "Total Daily Billable Ingestion (GB)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "areachart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            {
+              "seriesName": "DailyGB",
+              "label": "Daily Ingestion (GB)",
+              "color": "blue"
+            }
+          ]
+        }
+      },
+      "name": "daily-ingestion-trend"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "Usage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize DailyGB = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d), DataType\n| order by StartTime asc, DailyGB desc",
+        "size": 0,
+        "title": "Daily Ingestion by Table (GB)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart",
+        "chartSettings": {
+          "xAxis": "StartTime",
+          "yAxis": ["DailyGB"],
+          "group": "DataType",
+          "showDataLabels": false
+        }
+      },
+      "name": "daily-ingestion-by-table"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = split('{AnalyticTierTables}', ',');\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by bin(StartTime, 1d), DataType\n| extend\n    DailyGB = TotalMB / 1000.0,\n    RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    CurrentDailyCost = round(sum(DailyGB) * AnalyticCost, 2),\n    OptimizedDailyCost = round(\n        sumif(DailyGB, RecommendedTier == \"Analytic\") * AnalyticCost +\n        sumif(DailyGB, RecommendedTier == \"DataLake\") * DataLakeCost, 2)\n    by bin(StartTime, 1d)\n| extend DailySavings = round(CurrentDailyCost - OptimizedDailyCost, 2)\n| order by StartTime asc",
+        "size": 0,
+        "title": "Daily Cost: Current vs Optimized (with Savings)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "linechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            {
+              "seriesName": "CurrentDailyCost",
+              "label": "Current (All Analytic)",
+              "color": "redBright"
+            },
+            {
+              "seriesName": "OptimizedDailyCost",
+              "label": "Optimized (Tier Split)",
+              "color": "green"
+            },
+            {
+              "seriesName": "DailySavings",
+              "label": "Daily Savings",
+              "color": "orange"
+            }
+          ]
+        }
+      },
+      "name": "daily-cost-comparison-trend"
+    }
+  ],
+  "styleSettings": {},
+  "fromTemplateId": "sentinel-DataTierCostAnalysis",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
