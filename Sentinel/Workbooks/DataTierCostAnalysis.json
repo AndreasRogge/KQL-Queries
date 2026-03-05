@@ -74,26 +74,26 @@
             "delimiter": ",",
             "query": "Usage\n| where TimeGenerated > ago(30d)\n| where IsBillable == true\n| distinct DataType\n| order by DataType asc",
             "value": [
-              "SecurityAlert",
-              "SecurityIncident",
-              "SigninLogs",
-              "AADNonInteractiveUserSignInLogs",
+              "AADNonInteractiveSigninLogs",
+              "AlertEvidence",
+              "AlertInfo",
               "AuditLogs",
-              "OfficeActivity",
-              "ThreatIntelligenceIndicator",
-              "SecurityEvent",
-              "DeviceEvents",
-              "DeviceProcessEvents",
-              "DeviceNetworkEvents",
-              "DeviceFileEvents",
-              "DeviceLogonEvents",
-              "DeviceRegistryEvents",
-              "EmailEvents",
+              "AzureDiagnostics",
+              "AzureMetrics",
               "EmailAttachmentInfo",
+              "EmailEvents",
+              "EmailPostDeliveryEvents",
+              "EmailUrlInfo",
               "IdentityLogonEvents",
               "IdentityQueryEvents",
-              "AlertEvidence",
-              "AlertInfo"
+              "InsightsMetrics",
+              "LAQueryLogs",
+              "OnePasswordEventLogs_CL",
+              "SecurityEvent",
+              "SigninLogs",
+              "ThreatIntelIndicators",
+              "UsePeerAnalytics",
+              "Watchlist"
             ],
             "typeSettings": {
               "additionalResourceOptions": [
@@ -124,44 +124,9 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet Curr = '{CurrencySymbol}';\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    TotalDailyGB = round(sum(DailyAvgGB), 2),\n    AnalyticDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"Analytic\"), 2),\n    DataLakeDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"DataLake\"), 2)\n| extend\n    CurrentMonthlyCost = round(TotalDailyGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round((AnalyticDailyGB * 30 * AnalyticCost) + (DataLakeDailyGB * 30 * DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    TotalDailyGB,\n    AnalyticDailyGB,\n    DataLakeDailyGB,\n    CurrentMonthlyCost,\n    OptimizedMonthlyCost,\n    MonthlySavings,\n    SavingsPercent",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet Curr = '{CurrencySymbol}';\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    TotalDailyGB = round(sum(DailyAvgGB), 2),\n    AnalyticDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"Analytic\"), 2),\n    DataLakeDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"DataLake\"), 2)\n| extend\n    CurrentMonthlyCost = round(TotalDailyGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round((AnalyticDailyGB * 30 * AnalyticCost) + (DataLakeDailyGB * 30 * DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    Metric = pack_array(\n        'Total Daily Ingestion',\n        'Analytic Tier (daily)',\n        'Data Lake Tier (daily)',\n        'Current Monthly Cost',\n        'Optimized Monthly Cost',\n        'Monthly Savings',\n        'Savings'),\n    Value = pack_array(\n        strcat(tostring(TotalDailyGB), ' GB'),\n        strcat(tostring(AnalyticDailyGB), ' GB'),\n        strcat(tostring(DataLakeDailyGB), ' GB'),\n        strcat(tostring(CurrentMonthlyCost), ' ', Curr),\n        strcat(tostring(OptimizedMonthlyCost), ' ', Curr),\n        strcat(tostring(MonthlySavings), ' ', Curr),\n        strcat(tostring(SavingsPercent), ' %'))\n| mv-expand Metric to typeof(string), Value to typeof(string)",
         "size": 4,
-        "title": "Summary: Current vs Optimized Cost",
-        "queryType": 0,
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "visualization": "tiles",
-        "tileSettings": {
-          "titleContent": {},
-          "leftContent": {
-            "columnMatch": "TotalDailyGB",
-            "formatter": 12,
-            "formatOptions": {
-              "palette": "auto"
-            },
-            "numberFormat": {
-              "unit": 0,
-              "options": {
-                "style": "decimal",
-                "minimumFractionDigits": 2,
-                "maximumFractionDigits": 2
-              }
-            }
-          },
-          "showBorder": true,
-          "compositeBar": {},
-          "rowLimit": 1
-        },
-        "graphSettings": {}
-      },
-      "name": "summary-tiles"
-    },
-    {
-      "type": 3,
-      "content": {
-        "version": "KqlItem/1.0",
-        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet Curr = '{CurrencySymbol}';\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    TotalDailyGB = round(sum(DailyAvgGB), 2),\n    AnalyticDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"Analytic\"), 2),\n    DataLakeDailyGB = round(sumif(DailyAvgGB, RecommendedTier == \"DataLake\"), 2)\n| extend\n    CurrentMonthlyCost = round(TotalDailyGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round((AnalyticDailyGB * 30 * AnalyticCost) + (DataLakeDailyGB * 30 * DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    Metric = pack_array(\n        strcat('Total Daily Ingestion'),\n        strcat('Analytic Tier (daily)'),\n        strcat('Data Lake Tier (daily)'),\n        strcat('Current Monthly Cost'),\n        strcat('Optimized Monthly Cost'),\n        strcat('Monthly Savings'),\n        'Savings'),\n    Value = pack_array(\n        strcat(tostring(TotalDailyGB), ' GB'),\n        strcat(tostring(AnalyticDailyGB), ' GB'),\n        strcat(tostring(DataLakeDailyGB), ' GB'),\n        strcat(tostring(CurrentMonthlyCost), ' ', Curr),\n        strcat(tostring(OptimizedMonthlyCost), ' ', Curr),\n        strcat(tostring(MonthlySavings), ' ', Curr),\n        strcat(tostring(SavingsPercent), ' %'))\n| mv-expand Metric to typeof(string), Value to typeof(string)",
-        "size": 4,
-        "title": "Summary: Current vs Optimized Cost",
+        "title": "Summary: Current vs Optimized Cost ({CurrencySymbol})",
         "queryType": 0,
         "resourceType": "microsoft.operationalinsights/workspaces",
         "visualization": "tiles",
@@ -172,10 +137,7 @@
           },
           "leftContent": {
             "columnMatch": "Value",
-            "formatter": 1,
-            "formatOptions": {
-              "compositeBarSettings": {}
-            }
+            "formatter": 1
           },
           "showBorder": true
         }
@@ -188,7 +150,7 @@
         "version": "KqlItem/1.0",
         "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    CurrentCost = round(sum(DailyAvgGB) * 30 * AnalyticCost, 2),\n    OptimizedCost = round(\n        (sumif(DailyAvgGB, RecommendedTier == \"Analytic\") * 30 * AnalyticCost) +\n        (sumif(DailyAvgGB, RecommendedTier == \"DataLake\") * 30 * DataLakeCost), 2)\n| project\n    CostType = pack_array('Current (All Analytic)', 'Optimized (Tier Split)'),\n    Cost = pack_array(CurrentCost, OptimizedCost)\n| mv-expand CostType to typeof(string), Cost to typeof(real)",
         "size": 1,
-        "title": "Monthly Cost Comparison: Current vs Optimized ({CurrencySymbol})",
+        "title": "Monthly Cost Comparison ({CurrencySymbol})",
         "queryType": 0,
         "resourceType": "microsoft.operationalinsights/workspaces",
         "visualization": "barchart",
@@ -198,7 +160,7 @@
           "seriesLabelSettings": [
             {
               "seriesName": "Cost",
-              "label": "Monthly Cost ({CurrencySymbol})"
+              "label": "Monthly Cost"
             }
           ],
           "ySettings": {
@@ -220,7 +182,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize ['Volume (GB/day)'] = round(sum(DailyAvgGB), 2) by RecommendedTier",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize GBperDay = round(sum(DailyAvgGB), 2) by RecommendedTier",
         "size": 1,
         "title": "Data Volume Split: Analytic vs Data Lake (GB/day)",
         "queryType": 0,
@@ -253,24 +215,28 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet Curr = '{CurrencySymbol}';\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend\n    DailyAvgGB = round(TotalMB / 1000.0 / Days, 3),\n    RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| extend\n    CurrentMonthlyCost = round(DailyAvgGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round(DailyAvgGB * 30 * iff(RecommendedTier == \"Analytic\", AnalyticCost, DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    DataType,\n    ['Daily Avg (GB)'] = DailyAvgGB,\n    RecommendedTier,\n    ['Current Monthly Cost ({CurrencySymbol})'] = CurrentMonthlyCost,\n    ['Optimized Monthly Cost ({CurrencySymbol})'] = OptimizedMonthlyCost,\n    ['Monthly Savings ({CurrencySymbol})'] = MonthlySavings,\n    ['Savings (%)'] = SavingsPercent\n| order by ['Monthly Savings ({CurrencySymbol})'] desc",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet Curr = '{CurrencySymbol}';\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend\n    DailyAvgGB = round(TotalMB / 1000.0 / Days, 3),\n    RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| extend\n    CurrentMonthlyCost = round(DailyAvgGB * 30 * AnalyticCost, 2),\n    OptimizedMonthlyCost = round(DailyAvgGB * 30 * iff(RecommendedTier == \"Analytic\", AnalyticCost, DataLakeCost), 2)\n| extend\n    MonthlySavings = round(CurrentMonthlyCost - OptimizedMonthlyCost, 2),\n    SavingsPercent = round((CurrentMonthlyCost - OptimizedMonthlyCost) / CurrentMonthlyCost * 100, 1)\n| project\n    DataType,\n    DailyAvgGB,\n    RecommendedTier,\n    CurrentMonthlyCost,\n    OptimizedMonthlyCost,\n    MonthlySavings,\n    SavingsPercent\n| order by MonthlySavings desc",
         "size": 0,
-        "title": "Per-Table: Tier Recommendation and Savings",
+        "title": "Per-Table: Tier Recommendation and Savings ({CurrencySymbol})",
         "queryType": 0,
         "resourceType": "microsoft.operationalinsights/workspaces",
         "visualization": "table",
         "gridSettings": {
           "formatters": [
             {
-              "columnMatch": "Daily Avg",
+              "columnMatch": "DailyAvgGB",
               "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "110px"
+              },
               "numberFormat": {
                 "unit": 0,
                 "options": {
                   "style": "decimal",
                   "minimumFractionDigits": 3,
                   "maximumFractionDigits": 3
-                }
+                },
+                "emptyValCustomText": "0.000"
               }
             },
             {
@@ -300,7 +266,7 @@
               }
             },
             {
-              "columnMatch": "Current Monthly Cost",
+              "columnMatch": "CurrentMonthlyCost",
               "formatter": 0,
               "numberFormat": {
                 "unit": 0,
@@ -312,7 +278,7 @@
               }
             },
             {
-              "columnMatch": "Optimized Monthly Cost",
+              "columnMatch": "OptimizedMonthlyCost",
               "formatter": 0,
               "numberFormat": {
                 "unit": 0,
@@ -324,7 +290,7 @@
               }
             },
             {
-              "columnMatch": "Monthly Savings",
+              "columnMatch": "MonthlySavings",
               "formatter": 8,
               "formatOptions": {
                 "palette": "green"
@@ -339,7 +305,7 @@
               }
             },
             {
-              "columnMatch": "Savings (%)",
+              "columnMatch": "SavingsPercent",
               "formatter": 8,
               "formatOptions": {
                 "palette": "green"
@@ -354,9 +320,18 @@
               }
             }
           ],
+          "labelSettings": [
+            { "columnId": "DataType", "label": "Table" },
+            { "columnId": "DailyAvgGB", "label": "Daily Avg (GB)" },
+            { "columnId": "RecommendedTier", "label": "Recommended Tier" },
+            { "columnId": "CurrentMonthlyCost", "label": "Current Cost ({CurrencySymbol}/mo)" },
+            { "columnId": "OptimizedMonthlyCost", "label": "Optimized Cost ({CurrencySymbol}/mo)" },
+            { "columnId": "MonthlySavings", "label": "Savings ({CurrencySymbol}/mo)" },
+            { "columnId": "SavingsPercent", "label": "Savings (%)" }
+          ],
           "sortBy": [
             {
-              "itemKey": "Monthly Savings",
+              "itemKey": "MonthlySavings",
               "sortOrder": 2
             }
           ]
@@ -368,7 +343,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| where RecommendedTier == \"DataLake\"\n| extend ['Savings ({CurrencySymbol})'] = round(DailyAvgGB * 30 * (AnalyticCost - DataLakeCost), 2)\n| top 15 by ['Savings ({CurrencySymbol})'] desc\n| project DataType, ['Savings ({CurrencySymbol})']",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nlet Days = datetime_diff('day', {TimeRange:end}, {TimeRange:start});\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by DataType\n| extend DailyAvgGB = TotalMB / 1000.0 / Days\n| extend RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| where RecommendedTier == \"DataLake\"\n| extend Savings = round(DailyAvgGB * 30 * (AnalyticCost - DataLakeCost), 2)\n| top 15 by Savings desc\n| project DataType, Savings",
         "size": 1,
         "title": "Top 15 Tables: Monthly Savings if Moved to Data Lake ({CurrencySymbol})",
         "queryType": 0,
@@ -376,11 +351,11 @@
         "visualization": "barchart",
         "chartSettings": {
           "xAxis": "DataType",
-          "yAxis": ["Savings ({CurrencySymbol})"],
+          "yAxis": ["Savings"],
           "seriesLabelSettings": [
             {
-              "seriesName": "Savings ({CurrencySymbol})",
-              "label": "Monthly Savings ({CurrencySymbol})",
+              "seriesName": "Savings",
+              "label": "Monthly Savings",
               "color": "green"
             }
           ],
@@ -409,7 +384,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "Usage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize ['Ingestion (GB)'] = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d)\n| order by StartTime asc",
+        "query": "Usage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize DailyGB = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d)\n| order by StartTime asc",
         "size": 0,
         "title": "Total Daily Billable Ingestion (GB)",
         "queryType": 0,
@@ -418,7 +393,7 @@
         "chartSettings": {
           "seriesLabelSettings": [
             {
-              "seriesName": "Ingestion (GB)",
+              "seriesName": "DailyGB",
               "label": "Daily Ingestion (GB)",
               "color": "blue"
             }
@@ -441,7 +416,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "Usage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize ['Volume (GB)'] = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d), DataType\n| order by StartTime asc, ['Volume (GB)'] desc",
+        "query": "Usage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize DailyGB = round(sum(Quantity) / 1000.0, 3) by bin(StartTime, 1d), DataType\n| order by StartTime asc, DailyGB desc",
         "size": 0,
         "title": "Daily Ingestion by Table (GB)",
         "queryType": 0,
@@ -449,7 +424,7 @@
         "visualization": "barchart",
         "chartSettings": {
           "xAxis": "StartTime",
-          "yAxis": ["Volume (GB)"],
+          "yAxis": ["DailyGB"],
           "group": "DataType",
           "showDataLabels": false,
           "ySettings": {
@@ -470,7 +445,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by bin(StartTime, 1d), DataType\n| extend\n    DailyGB = TotalMB / 1000.0,\n    RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    ['Current Cost ({CurrencySymbol})'] = round(sum(DailyGB) * AnalyticCost, 2),\n    ['Optimized Cost ({CurrencySymbol})'] = round(\n        sumif(DailyGB, RecommendedTier == \"Analytic\") * AnalyticCost +\n        sumif(DailyGB, RecommendedTier == \"DataLake\") * DataLakeCost, 2)\n    by bin(StartTime, 1d)\n| extend ['Daily Savings ({CurrencySymbol})'] = round(['Current Cost ({CurrencySymbol})'] - ['Optimized Cost ({CurrencySymbol})'], 2)\n| order by StartTime asc",
+        "query": "let AnalyticCost = toreal('{AnalyticCostPerGB}');\nlet DataLakeCost = toreal('{DataLakeCostPerGB}');\nlet AnalyticTables = dynamic([{AnalyticTierTables}]);\nUsage\n| where TimeGenerated {TimeRange}\n| where IsBillable == true\n| summarize TotalMB = sum(Quantity) by bin(StartTime, 1d), DataType\n| extend\n    DailyGB = TotalMB / 1000.0,\n    RecommendedTier = iff(DataType in (AnalyticTables), \"Analytic\", \"DataLake\")\n| summarize\n    CurrentCost = round(sum(DailyGB) * AnalyticCost, 2),\n    OptimizedCost = round(\n        sumif(DailyGB, RecommendedTier == \"Analytic\") * AnalyticCost +\n        sumif(DailyGB, RecommendedTier == \"DataLake\") * DataLakeCost, 2)\n    by bin(StartTime, 1d)\n| extend DailySavings = round(CurrentCost - OptimizedCost, 2)\n| order by StartTime asc",
         "size": 0,
         "title": "Daily Cost: Current vs Optimized ({CurrencySymbol})",
         "queryType": 0,
@@ -479,17 +454,17 @@
         "chartSettings": {
           "seriesLabelSettings": [
             {
-              "seriesName": "Current Cost ({CurrencySymbol})",
+              "seriesName": "CurrentCost",
               "label": "Current (All Analytic)",
               "color": "redBright"
             },
             {
-              "seriesName": "Optimized Cost ({CurrencySymbol})",
+              "seriesName": "OptimizedCost",
               "label": "Optimized (Tier Split)",
               "color": "green"
             },
             {
-              "seriesName": "Daily Savings ({CurrencySymbol})",
+              "seriesName": "DailySavings",
               "label": "Daily Savings",
               "color": "orange"
             }
