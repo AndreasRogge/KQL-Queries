@@ -8,15 +8,20 @@
 
 ## Executive Summary
 
-Our analysis of your Microsoft Sentinel ingestion data over the last 30 days reveals a significant cost optimization opportunity. By implementing a **three-tier data strategy**, your monthly Sentinel costs can be reduced from **10,234.92 EUR to 1,672.52 EUR** — a saving of **8,562.40 EUR per month (83.7%)**.
+Our analysis of your Microsoft Sentinel ingestion data over the last 30 days reveals a significant cost optimization opportunity. By implementing a **three-tier data strategy** with the following retention model, your monthly Sentinel costs can be substantially reduced:
+
+**Retention model used in this report:**
+- **Analytic tier:** 90 days interactive + 3 additional months in Data Lake = **6 months total retention**
+- **Data Lake only tier:** **6 months** retention
+- **Defender XDR only:** 30 days (free in Defender portal)
 
 | Metric | Value |
 |--------|-------|
-| Current monthly cost (all Analytic) | 10,234.92 EUR |
-| Optimized monthly cost (3-tier) | 1,672.52 EUR |
-| **Monthly savings** | **8,562.40 EUR** |
-| **Annual savings** | **~102,749 EUR** |
-| Savings percentage | 83.7% |
+| Current monthly cost (all Analytic, 90 days only) | 10,234.92 EUR |
+| Optimized monthly cost (3-tier, 6 months retention) | 1,675.39 EUR |
+| **Monthly savings** | **8,559.53 EUR** |
+| **Annual savings** | **~102,714 EUR** |
+| Savings percentage | 83.6% |
 
 ---
 
@@ -51,7 +56,9 @@ Microsoft Sentinel provides three distinct data tier options, each suited for di
 
 **Use case:** Tables that require real-time detection rules, scheduled analytics, workbooks, and interactive hunting in Sentinel.
 
-**Cost:** 5.36 EUR per GB ingested. 90 days interactive retention included. Optional long-term retention beyond 90 days at Data Lake storage rate only (0.02 EUR per compressed GB/month, 6:1 compression).
+**Cost:** 5.36 EUR per GB ingested. 90 days interactive retention included. Data beyond 90 days is automatically moved to the Data Lake at 0.02 EUR per compressed GB/month (6:1 compression). **No additional ingestion charge** for the long-term retention — only the storage rate.
+
+**Retention in this report:** 6 months total (90 days interactive + 3 months Data Lake storage).
 
 **Tables in this tier (19 selected):**
 - SigninLogs, AADNonInteractiveSigninLogs, AuditLogs
@@ -63,7 +70,7 @@ Microsoft Sentinel provides three distinct data tier options, each suited for di
 - ThreatIntelIndicators, UsePeerAnalytics, Watchlist
 - LAQueryLogs, OnePasswordEventLogs_CL
 
-**Rationale:** These tables feed active Sentinel analytics rules, correlation queries, or workbooks. They require the full Analytic tier for real-time detection and response. If long-term retention is needed (e.g., 6 months or 1 year), data beyond 90 days is automatically stored in the Data Lake at the compressed storage rate — no additional ingestion charge applies.
+**Rationale:** These tables feed active Sentinel analytics rules, correlation queries, or workbooks. They require the full Analytic tier for real-time detection and response. With 6 months total retention, data older than 90 days is stored in the Data Lake at compressed rates — adding only ~2.47 EUR/month for all Analytic tables combined.
 
 ### Tier 2: Data Lake Only (55.42 GB/day)
 
@@ -101,16 +108,17 @@ Microsoft Sentinel provides three distinct data tier options, each suited for di
 
 ### Monthly Ingestion Costs
 
-| Cost Component | Monthly Cost (EUR) |
-|----------------|-------------------|
-| Analytic Tier ingestion (8.23 GB/day x 30 x 5.36) | 1,322.97 |
-| Analytic Tier long-term storage (beyond 90 days) | Depends on retention setting* |
-| Data Lake only ingestion (55.42 GB/day x 30 x 0.19) | 315.90 |
-| Data Lake only storage (6 months retention, 6:1 compression) | 33.25 |
-| Defender XDR Only | 0.00 |
-| **Total optimized** | **~1,672 EUR** |
+| Cost Component | Calculation | Monthly Cost (EUR) |
+|----------------|------------|-------------------|
+| Analytic Tier ingestion | 8.23 GB/day x 30 x 5.36 EUR/GB | 1,322.97 |
+| Analytic Tier Data Lake storage (3 extra months) | 8.23 x 30 x 3 months / 6 compression x 0.02 EUR/GB | 2.47 |
+| Data Lake only ingestion | 55.42 GB/day x 30 x 0.19 EUR/GB | 315.90 |
+| Data Lake only storage (6 months) | 55.42 x 30 x 6 months / 6 compression x 0.02 EUR/GB | 33.25 |
+| Defender XDR Only | Free | 0.00 |
+| **Total optimized** | | **1,674.59 EUR** |
 
-*With Analytic total retention set to 90 days (default), there is no additional storage cost. If extended to 6 months, the additional 3 months of compressed storage for Analytic tables adds approximately 2.47 EUR/month.*
+**How Analytic long-term storage cost is calculated:**
+Analytic tables produce 8.23 GB/day = 246.9 GB/month. With 6 months total retention, the first 90 days (3 months) are free interactive retention. The remaining 3 months are stored in the Data Lake. At steady state, you store 3 months x 246.9 GB = 740.7 GB raw, compressed to 123.5 GB (6:1 ratio). Monthly storage = 123.5 x 0.02 = **2.47 EUR/month**.
 
 ### Data Lake Storage Calculation
 
@@ -122,11 +130,13 @@ Data Lake storage benefits from a **6:1 compression ratio** as documented by Mic
 - Compressed storage billed: ~1,662.6 GB (6:1 ratio)
 - Monthly storage cost: ~33.25 EUR
 
-**For Analytic tables with extended retention (e.g., 6 months total):**
-- 90 days interactive retention: included free
+**For Analytic tables (6 months total = 90d interactive + 3 months Data Lake):**
+- 90 days interactive retention: included free (no extra charge)
 - Additional 3 months in Data Lake: compressed storage rate only
 - No additional ingestion charge (already paid at Analytic rate)
-- Monthly extra storage cost: ~2.47 EUR
+- Monthly raw volume: ~246.9 GB
+- Data Lake stored (3 months): 740.7 GB raw = 123.5 GB compressed
+- Monthly storage cost: 123.5 x 0.02 = **2.47 EUR**
 
 ### Top Tables by Savings Potential
 
@@ -197,10 +207,10 @@ Use the provided **Sentinel Data Tier Cost Analysis** workbook to continuously m
 
 By implementing the three-tier data strategy, you achieve:
 
-- **83.7% monthly cost reduction** (8,562.40 EUR/month saved)
-- **~102,749 EUR annual savings**
-- Full retention of all data for compliance and forensics
-- Analytic tables can retain data beyond 90 days in the Data Lake at minimal storage cost (no extra ingestion charge)
+- **83.6% monthly cost reduction** (8,559.53 EUR/month saved)
+- **~102,714 EUR annual savings**
+- **6 months retention** for all data: Analytic tables get 90 days interactive + 3 months Data Lake; Data Lake only tables get 6 months
+- Analytic long-term retention adds only 2.47 EUR/month (no extra ingestion charge, only compressed storage)
 - No impact to active Sentinel detection capabilities
 - Continued 30-day hunting capability in Defender XDR for applicable tables
 - Ongoing cost monitoring via the included Sentinel workbook
