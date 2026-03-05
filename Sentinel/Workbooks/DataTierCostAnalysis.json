@@ -308,9 +308,9 @@
             { "columnId": "MonthlyRawGB", "label": "Monthly Raw (GB)" },
             { "columnId": "RetainedRawGB", "label": "Total Retained (GB)" },
             { "columnId": "CompressedGB", "label": "Compressed (GB, 6:1)" },
-            { "columnId": "MonthlyIngestionCost", "label": "Ingestion ({CurrencySymbol}/mo)" },
-            { "columnId": "MonthlyStorageCost", "label": "Storage ({CurrencySymbol}/mo)" },
-            { "columnId": "TotalMonthlyCost", "label": "Total ({CurrencySymbol}/mo)" }
+            { "columnId": "MonthlyIngestionCost", "label": "Ingestion Cost/mo" },
+            { "columnId": "MonthlyStorageCost", "label": "Storage Cost/mo" },
+            { "columnId": "TotalMonthlyCost", "label": "Total Cost/mo" }
           ],
           "sortBy": [
             { "itemKey": "TotalMonthlyCost", "sortOrder": 2 }
@@ -383,9 +383,9 @@
             { "columnId": "DataType", "label": "Table" },
             { "columnId": "DailyAvgGB", "label": "Daily Avg (GB)" },
             { "columnId": "Tier", "label": "Assigned Tier" },
-            { "columnId": "CurrentMonthlyCost", "label": "Current Cost ({CurrencySymbol}/mo)" },
-            { "columnId": "OptimizedMonthlyCost", "label": "Optimized Cost ({CurrencySymbol}/mo)" },
-            { "columnId": "MonthlySavings", "label": "Savings ({CurrencySymbol}/mo)" },
+            { "columnId": "CurrentMonthlyCost", "label": "Current Cost/mo" },
+            { "columnId": "OptimizedMonthlyCost", "label": "Optimized Cost/mo" },
+            { "columnId": "MonthlySavings", "label": "Savings/mo" },
             { "columnId": "SavingsPercent", "label": "Savings (%)" }
           ],
           "sortBy": [
