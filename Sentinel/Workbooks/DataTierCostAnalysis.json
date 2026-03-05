@@ -4,7 +4,7 @@
     {
       "type": 1,
       "content": {
-        "json": "# Sentinel Data Tier Cost Analysis\n\nThis workbook analyzes ingestion volumes across **three tiers** to optimize your Microsoft Sentinel costs:\n\n| Tier | Use Case | Ingestion Cost | Retention |\n|------|----------|----------------|----------|\n| **Analytic** | Real-time detection rules, workbooks, hunting | Full price per GB | 90 days free + optional Data Lake long-term retention |\n| **Data Lake only** | Long-term retention, compliance, forensics | Low price per GB | Up to 12 years |\n| **Defender XDR only** | Already available 30 days in Defender portal | Free (no Sentinel ingestion) | 30 days |\n\n**Note:** Analytic tier tables can extend retention beyond 90 days into the Data Lake at compressed storage rates only (no additional ingestion charge). Data Lake only tables use the lower ingestion price but have no Analytic tier access.\n\nAll data is pulled automatically from the built-in `Usage` table.\n\n---"
+        "json": "# Sentinel Data Tier Cost Analysis\n\nThis workbook analyzes ingestion volumes across **three tiers** to optimize your Microsoft Sentinel costs:\n\n| Tier | Use Case | Ingestion Cost | Retention |\n|------|----------|----------------|----------|\n| **Analytic** | Real-time detection rules, workbooks, hunting | Full price per GB | 90 days interactive (free) |\n| **Data Lake only** | Long-term retention, compliance, forensics | Low price per GB | Configurable (up to 12 years) |\n| **Defender XDR only** | Already available 30 days in Defender portal | Free (no Sentinel ingestion) | 30 days |\n\n### How Analytic long-term retention works\n\nAnalytic tier tables include **90 days of interactive retention** at no extra cost. If you need to keep data longer (e.g. 180 days, 1 year, or more), the data beyond 90 days is automatically moved to the **Data Lake for long-term storage**. You pay **only the compressed storage rate** — there is **no additional ingestion charge**. Use the **Analytic Tier Total Retention** parameter below to model this cost.\n\n**Example:** Analytic Total Retention = 6 months means 90 days interactive + 90 days in Data Lake storage. For 10 GB/day: storage cost = 10 × 30 × 3 months ÷ 6 (compression) × 0.02 = **3.00 EUR/month**.\n\nAll data is pulled automatically from the built-in `Usage` table.\n\n---"
       },
       "name": "header"
     },
@@ -79,8 +79,8 @@
             "type": 2,
             "isRequired": true,
             "value": "3",
-            "jsonData": "[{\"value\": \"3\", \"label\": \"90 days (no extra cost)\"}, {\"value\": \"6\", \"label\": \"6 months\"}, {\"value\": \"12\", \"label\": \"1 year\"}, {\"value\": \"24\", \"label\": \"2 years\"}, {\"value\": \"36\", \"label\": \"3 years\"}, {\"value\": \"60\", \"label\": \"5 years\"}, {\"value\": \"84\", \"label\": \"7 years\"}, {\"value\": \"120\", \"label\": \"10 years\"}]",
-            "label": "Analytic Tier Total Retention"
+            "jsonData": "[{\"value\": \"3\", \"label\": \"90 days only (no Data Lake)\"}, {\"value\": \"6\", \"label\": \"6 months (90d interactive + 3mo Data Lake)\"}, {\"value\": \"12\", \"label\": \"1 year (90d interactive + 9mo Data Lake)\"}, {\"value\": \"24\", \"label\": \"2 years (90d interactive + 21mo Data Lake)\"}, {\"value\": \"36\", \"label\": \"3 years (90d interactive + 33mo Data Lake)\"}, {\"value\": \"60\", \"label\": \"5 years (90d interactive + 57mo Data Lake)\"}, {\"value\": \"84\", \"label\": \"7 years (90d interactive + 81mo Data Lake)\"}, {\"value\": \"120\", \"label\": \"10 years (90d interactive + 117mo Data Lake)\"}]",
+            "label": "Analytic Total Retention (interactive + Data Lake)"
           },
           {
             "id": "datalakeRetention",
@@ -259,7 +259,7 @@
     {
       "type": 1,
       "content": {
-        "json": "---\n## Data Lake Cost Detail\n\nData Lake storage is billed at a **6:1 compression ratio**. Example: 600 GB raw = 100 GB billed.\n\n**Two retention scenarios:**\n- **Analytic + Data Lake:** Tables ingested at Analytic price (90 days interactive included). Beyond 90 days, data moves to Data Lake storage at compressed rate. *No separate Data Lake ingestion charge.*\n- **Data Lake only:** Tables ingested at the lower Data Lake ingestion price + storage cost. No Analytic tier access."
+        "json": "---\n## Data Lake Cost Detail\n\nThe table below shows **Data Lake only** tables — these are ingested at the lower Data Lake price and stored for the configured retention period.\n\nData Lake storage uses a **6:1 compression ratio**. Example: 600 GB raw = 100 GB billed.\n\n> **Note:** Analytic tier tables with extended retention (set via *Analytic Total Retention* parameter above) also store data in the Data Lake beyond 90 days. That cost is shown in the *Analytic Long-Term Storage* bar in the cost breakdown above — not in this table."
       },
       "name": "section-datalake"
     },
