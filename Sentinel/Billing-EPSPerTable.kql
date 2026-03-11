@@ -6,3 +6,8 @@ CommonSecurityLog
     ['Maximum eps']=avg(counttemp) by bin(TimeGenerated,1m)
 | order by TimeGenerated asc
 | render timechart 
+
+//Syslog
+//| where TimeGenerated >= ago(3d)
+//| make-series count() default=0 on TimeGenerated from ago(3d) to now() step 10m
+//| render timechart
