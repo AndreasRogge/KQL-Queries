@@ -1,0 +1,221 @@
+// Hunt: related phishing mails + click activity + post-delivery actions + endpoint sightings
+// Auto-extracts NetworkMessageId, Sender, Subject, Attachments, URLs from admin-graded phishing in CloudAppEvents
+// Includes Inbox, Junk folder, and Quarantine mails. Add manual indicators in the dynamic() arrays below to extend the hunt.
+// ============================================================
+// CONFIGURATION
+// ============================================================
+let triage_window = 12h;   // How far back to look for admin-graded phishing seeds
+let hunt_window   = 1d;  // How far back to hunt for related activity
+// ============================================================
+// MANUAL INDICATORS — extend here
+// ============================================================
+let manual_ids       = dynamic([]);
+let manual_subjects  = dynamic([]);
+let manual_senders   = dynamic([]);   // SenderFromAddress
+let manual_display   = dynamic([]);   // SenderDisplayName
+let manual_urls      = dynamic([]);
+let manual_filenames = dynamic([]);
+// ============================================================
+// EXCLUSIONS — benign urls/attachments seen in every mail
+// ============================================================
+let exclude_urls      = dynamic([]);
+let exclude_filenames = dynamic([]);
+// ============================================================
+// SEED EXTRACTION
+// ============================================================
+let triage_ids = toscalar(
+    CloudAppEvents
+    | where Timestamp > ago(triage_window)
+    | extend Raw = parse_json(RawEventData)
+    | where Raw.GradingResult has "Phishing"
+    | summarize make_set(tostring(Raw.ObjectId)));
+    let triage_quarantine = toscalar(
+    EmailEvents
+    | where Timestamp > ago(triage_window)
+    | where LatestDeliveryLocation =~ "Quarantine"
+    | where ThreatTypes has_any ("Phish", "Malware")
+       or DetectionMethods has_any ("Phish", "Malware")
+    | summarize make_set(NetworkMessageId));
+let hunt_ids = set_union(triage_ids, triage_quarantine, manual_ids);
+//let hunt_ids = set_union(triage_ids, manual_ids);
+// ============================================================
+// INDICATOR EXPANSION
+// ============================================================
+let hunt_mails = EmailEvents
+    | where Timestamp > ago(hunt_window)
+    | where NetworkMessageId in (hunt_ids);
+let hunt_subjects  = set_union(toscalar(hunt_mails | summarize make_set_if(Subject,           isnotempty(Subject))),          manual_subjects);
+let hunt_senders   = set_union(toscalar(hunt_mails | summarize make_set_if(SenderFromAddress, isnotempty(SenderFromAddress))), manual_senders);
+let hunt_display   = set_union(toscalar(hunt_mails | summarize make_set_if(SenderDisplayName, isnotempty(SenderDisplayName))), manual_display);
+let hunt_filenames = set_union(toscalar(
+    EmailAttachmentInfo
+    | where Timestamp > ago(hunt_window)
+    | where NetworkMessageId in (hunt_ids)
+    | where FileName !in~ (exclude_filenames)
+    | summarize make_set_if(FileName, isnotempty(FileName))), manual_filenames);
+let hunt_urls      = set_union(toscalar(
+    EmailUrlInfo
+    | where Timestamp > ago(hunt_window)
+    | where NetworkMessageId in (hunt_ids)
+    | where Url !in~ (exclude_urls)
+    | summarize make_set_if(Url, isnotempty(Url))), manual_urls);
+// ============================================================
+// BASE MAIL TABLE
+// ============================================================
+let total_mails = EmailEvents
+    | where Timestamp > ago(hunt_window)
+    | project Timestamp, NetworkMessageId, EmailDirection, LatestDeliveryLocation,
+              RecipientEmailAddress, SenderMailFromAddress, SenderFromAddress, SenderDisplayName, Subject,
+              ThreatTypes, DetectionMethods, DeliveryAction;
+// ============================================================
+// MATCH BRANCH 1 — Mail metadata
+// ============================================================
+let match_mail = total_mails
+//    | where NetworkMessageId in (hunt_ids)  
+    | where NetworkMessageId in (hunt_ids)
+        or Subject in~ (hunt_subjects)
+        or SenderFromAddress in~ (hunt_senders)
+        or SenderDisplayName in~ (hunt_display)
+    | extend
+        r_Seed    = NetworkMessageId in (hunt_ids),
+        r_Subject = Subject in~ (hunt_subjects),
+        r_Sender  = SenderFromAddress in~ (hunt_senders),
+        r_Display = SenderDisplayName in~ (hunt_display)
+    | extend MatchReasons = array_concat(
+        iff(r_Seed,    dynamic(["Seed"]),          dynamic([])),
+        iff(r_Subject, dynamic(["Subject"]),       dynamic([])),
+        iff(r_Sender,  dynamic(["Sender"]),        dynamic([])),
+        iff(r_Display, dynamic(["SenderDisplay"]), dynamic([])))
+    | project-away r_Seed, r_Subject, r_Sender, r_Display
+    | extend FileName = "", Url = "";
+// ============================================================
+// MATCH BRANCH 2 — Attachment filename
+// ============================================================
+let match_file = EmailAttachmentInfo
+    | where Timestamp > ago(hunt_window)
+    | where FileName in~ (hunt_filenames)
+    | where FileName !in~ (exclude_filenames)
+    | project NetworkMessageId, FileName
+    | lookup kind=inner (total_mails) on NetworkMessageId
+    | extend MatchReasons = dynamic(["Attachment"]), Url = "";
+// ============================================================
+// MATCH BRANCH 3 — URL
+// ============================================================
+let match_url = EmailUrlInfo
+    | where Timestamp > ago(hunt_window)
+    | where Url in~ (hunt_urls)
+    | where Url !in~ (exclude_urls)
+    | project NetworkMessageId, Url
+    | lookup kind=inner (total_mails) on NetworkMessageId
+    | extend MatchReasons = dynamic(["URL"]), FileName = "";
+// ============================================================
+// CONSOLIDATION
+// Two-pass summarize: first collect all MatchReasons per mail
+// via arg_max to anchor metadata to the latest row, then
+// mv-expand + make_set to flatten reasons into a clean set.
+// ============================================================
+let matched = union match_mail, match_file, match_url
+    | where EmailDirection == "Inbound"
+    | where LatestDeliveryLocation !in~ ("Deleted items", "Dropped", "Failed")
+    | mv-expand MatchReasons
+    | summarize
+        MatchReasons           = make_set(MatchReasons),
+        Found_Files            = make_set_if(FileName, isnotempty(FileName)),
+        Found_URLs             = make_set_if(Url, isnotempty(Url)),
+        Timestamp          = max(Timestamp),
+        EmailDirection         = take_any(EmailDirection),
+        LatestDeliveryLocation = take_any(LatestDeliveryLocation),
+        RecipientEmailAddress  = take_any(RecipientEmailAddress),
+        SenderMailFromAddress  = take_any(SenderMailFromAddress),
+        SenderFromAddress      = take_any(SenderFromAddress),
+        SenderDisplayName      = take_any(SenderDisplayName),
+        Subject                = take_any(Subject),
+        ThreatTypes            = take_any(ThreatTypes),
+        DetectionMethods       = take_any(DetectionMethods),
+        DeliveryAction         = take_any(DeliveryAction)
+        by NetworkMessageId
+    | where LatestDeliveryLocation in~ ("Inbox", "Inbox/folder", "Junk folder", "Quarantine")
+    | extend MailStatus = case(
+        LatestDeliveryLocation =~ "Inbox",        "Active-Inbox",
+        LatestDeliveryLocation =~ "Inbox/folder", "Active-Inbox",
+        LatestDeliveryLocation =~ "Junk folder",  "Active-Junk",
+        LatestDeliveryLocation =~ "Quarantine",   "Quarantined",
+                                                   LatestDeliveryLocation)
+    | project Timestamp, NetworkMessageId, MatchReasons, MailStatus,
+              RecipientEmailAddress, SenderMailFromAddress, SenderFromAddress, SenderDisplayName,
+              Subject, ThreatTypes, DetectionMethods, DeliveryAction,
+              Found_Files, Found_URLs;
+let matched_ids = toscalar(matched | summarize make_set(NetworkMessageId));
+// ============================================================
+// FOLLOW-UP 1 — Click tracking
+// ============================================================
+let clicks = UrlClickEvents
+    | where Timestamp > ago(hunt_window)
+    | where NetworkMessageId in (matched_ids)
+    | summarize
+        ClickActions   = make_set(ActionType),
+        Clickers       = make_set(AccountUpn),
+        FirstClick     = min(Timestamp),
+        ClickedThrough = countif(IsClickedThrough == true) > 0
+        by NetworkMessageId;
+// ============================================================
+// FOLLOW-UP 2 — Post-delivery / ZAP / Admin-Remediation
+// ============================================================
+let postdelivery = EmailPostDeliveryEvents
+    | where Timestamp > ago(hunt_window)
+    | where NetworkMessageId in (matched_ids)
+    | summarize
+        PostDeliveryActions = make_set(Action),
+        LastRemediation     = max(Timestamp)
+        by NetworkMessageId;
+// ============================================================
+// FOLLOW-UP 3 — Endpoint correlation via attachment SHA256
+// 1. attachment_sha256s: maps NetworkMessageId -> SHA256 for matched mails
+// 2. matched_sha256_set: flat set used as pre-filter on device tables
+// 3. endpoint_hits: joins against device events per mail
+// ============================================================
+let attachment_sha256s = EmailAttachmentInfo
+    | where Timestamp > ago(hunt_window)
+    | where NetworkMessageId in (matched_ids)
+    | where isnotempty(SHA256)
+    | project NetworkMessageId, SHA256;
+let matched_sha256_set = toscalar(attachment_sha256s | summarize make_set(SHA256));
+let endpoint_hits = attachment_sha256s
+    | join kind=inner (
+        union
+            (DeviceFileEvents
+                | where Timestamp > ago(hunt_window)
+                | where SHA256 in (matched_sha256_set)
+                | project DeviceName, SHA256, ActivityType="File",    EventTime=Timestamp),
+            (DeviceProcessEvents
+                | where Timestamp > ago(hunt_window)
+                | where SHA256 in (matched_sha256_set)
+                | project DeviceName, SHA256, ActivityType="Process", EventTime=Timestamp)
+    ) on SHA256
+    | summarize
+        FileSightings      = countif(ActivityType == "File"),
+        Executions         = countif(ActivityType == "Process"),
+        EndpointDevices    = make_set(DeviceName),
+        FirstEndpointTouch = min(EventTime)
+        by NetworkMessageId;
+// ============================================================
+// FINAL ASSEMBLY + TRIAGE SORT
+// ============================================================
+matched
+| lookup kind=leftouter (clicks)        on NetworkMessageId
+| lookup kind=leftouter (postdelivery)  on NetworkMessageId
+| lookup kind=leftouter (endpoint_hits) on NetworkMessageId
+| extend
+    EndpointHit       = isnotnull(FirstEndpointTouch),
+    UserClicked       = isnotnull(FirstClick),
+    AlreadyRemediated = isnotnull(LastRemediation)
+| project
+    Timestamp, NetworkMessageId, MatchReasons, MailStatus,
+    EndpointHit, UserClicked, AlreadyRemediated,
+    RecipientEmailAddress, SenderFromAddress, SenderDisplayName, Subject,
+    ThreatTypes, DetectionMethods, DeliveryAction,
+    Found_Files, Found_URLs,
+    ClickActions, Clickers, FirstClick,
+    PostDeliveryActions, LastRemediation,
+    FileSightings, Executions, EndpointDevices, FirstEndpointTouch
+| sort by EndpointHit desc, UserClicked desc, MailStatus asc, Timestamp desc
